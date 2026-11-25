@@ -192,7 +192,7 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
   assert.equal(winVisible, false);
 });
 
-test('win32 DWM thumbnail wrappers encode packed properties and return handles', () => {
+test('win32 DWM thumbnail wrappers encode properties and return handles', () => {
   const calls = [];
   const methods = {
     DwmRegisterThumbnail: (dest, src, out) => { calls.push(['reg', dest, src]); out[0] = 777; return 0; },
@@ -205,18 +205,18 @@ test('win32 DWM thumbnail wrappers encode packed properties and return handles',
     SetForegroundWindow: (hwnd) => { calls.push(['fg', hwnd]); return true; },
     IsZoomed: (hwnd) => hwnd === 55,
   };
-  const packedNames = [];
+  const structNames = [];
   const koffi = {
     load: () => ({ func: (signature) => methods[signature.match(/(\w+)\(/)[1]] }),
-    struct() {},
-    pack(name) { packedNames.push(name); },
+    struct(name) { structNames.push(name); },
+    pack() { throw new Error('DWM thumbnail properties must use natural struct alignment'); },
     proto() {},
   };
   const context = vm.createContext({ require: () => koffi, module: {} });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'win32.js'), 'utf8'), context);
   const w32 = context.module.exports;
 
-  assert.ok(packedNames.includes('DWM_THUMBNAIL_PROPERTIES'));
+  assert.ok(structNames.includes('DWM_THUMBNAIL_PROPERTIES'));
   assert.equal(w32.registerThumbnail(1, 2), 777);
   assert.deepEqual({ ...w32.queryThumbnailSourceSize(777) }, { width: 1600, height: 900 });
   assert.equal(w32.updateThumbnail(777, { left: 10, top: 20, right: 210, bottom: 140 }), true);
@@ -229,4 +229,16 @@ test('win32 DWM thumbnail wrappers encode packed properties and return handles',
   assert.equal(w32.restoreWindow(55), true);
   assert.equal(w32.focusWindow(55, { restore: false }), true);
   assert.deepEqual(calls.slice(-4), [['showAsync', 55, 6], ['showAsync', 55, 3], ['showAsync', 55, 9], ['fg', 55]]);
+});
+
+test('DWM thumbnail properties use the Win32 ABI layout', { skip: process.platform !== 'win32' }, () => {
+  const koffi = require('koffi');
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'win32.js'), 'utf8'), {
+    module: {},
+    require: () => ({ ...koffi, load: () => ({ func() {} }) }),
+  });
+  const properties = koffi.resolve('DWM_THUMBNAIL_PROPERTIES');
+  assert.equal(koffi.sizeof(properties), 48);
+  assert.equal(koffi.offsetof(properties, 'fVisible'), 40);
+  assert.equal(koffi.offsetof(properties, 'fSourceClientAreaOnly'), 44);
 });
