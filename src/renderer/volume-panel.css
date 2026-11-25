@@ -1,0 +1,70 @@
+#panel[data-widget="volume"] {
+  --volume-shift: 14px;
+  background: radial-gradient(ellipse at 20% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 75%), var(--panel-bg);
+}
+[data-position="top"] #panel[data-widget="volume"] { --volume-shift: -14px; }
+#panel[data-widget="volume"].enter {
+  animation: openbar-volume-pop .38s cubic-bezier(.2,.72,.2,1) both;
+}
+@keyframes openbar-volume-pop {
+  0% { opacity: 0; transform: translateY(var(--volume-shift)) scale(.86,.72); }
+  75% { opacity: 1; transform: scale(1.008,1.01); }
+  100% { opacity: 1; transform: none; }
+}
+#panel[data-widget="volume"].enter .volume-card,
+#panel[data-widget="volume"].enter .volume-settings {
+  animation: openbar-volume-rise .32s .06s cubic-bezier(.2,.72,.2,1) both;
+}
+#panel[data-widget="volume"].enter .volume-settings { animation-delay: .11s; }
+@keyframes openbar-volume-rise {
+  from { opacity: 0; transform: translateY(calc(var(--volume-shift) * .45)) scale(.98); }
+}
+#panel[data-widget="volume"].enter #body > .volume-content { animation: none; }
+#panel[data-widget="volume"] .volume-content { display: grid; gap: 10px; padding: 4px; }
+#panel[data-widget="volume"] .volume-card {
+  display: grid; gap: 14px; padding: 14px; border-radius: 14px;
+  background: var(--card); box-shadow: inset 0 0 0 1px var(--card-line);
+}
+#panel[data-widget="volume"] .volume-status { margin: 0; color: var(--muted); font-size: 12px; font-weight: 600; }
+#panel[data-widget="volume"] .volume-controls { display: flex; align-items: center; gap: 12px; }
+#panel[data-widget="volume"] .volume-mute {
+  display: grid; place-items: center; flex: none; width: 40px; height: 40px;
+  border-radius: 12px; background: var(--hover);
+  transition: color .18s, background-color .18s, transform .18s;
+}
+#panel[data-widget="volume"] .volume-mute:hover:not(:disabled) { background: var(--active); }
+#panel[data-widget="volume"] .volume-mute:active:not(:disabled) { transform: scale(.92); }
+#panel[data-widget="volume"] .volume-mute[aria-pressed="true"] { color: var(--accent); }
+#panel[data-widget="volume"] .volume-mute:disabled { color: var(--muted); }
+#panel[data-widget="volume"] .volume-waves, #panel[data-widget="volume"] .volume-cross {
+  transform-origin: 68% 50%; transition: transform .2s, opacity .2s;
+}
+#panel[data-widget="volume"] .volume-silent .volume-waves { opacity: 0; transform: scale(.6); }
+#panel[data-widget="volume"] .volume-silent .volume-cross { opacity: 1; }
+#panel[data-widget="volume"] .volume-track { flex: 1; position: relative; min-width: 0; }
+#panel[data-widget="volume"] .volume-track::before {
+  position: absolute; inset: 50% 8px auto; height: 6px; content: ''; pointer-events: none;
+  transform: translateY(-50%); border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent) var(--volume-fill, 0%), var(--active) var(--volume-fill, 0%));
+}
+#panel[data-widget="volume"] [data-muted="true"] .volume-track::before { opacity: .55; }
+#panel[data-widget="volume"] input[type="range"] {
+  position: relative; display: block; appearance: none; margin: 0; width: 100%; height: 36px;
+  background: transparent; border: none; padding: 0; cursor: pointer;
+}
+#panel[data-widget="volume"] input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--fg); box-shadow: 0 1px 4px #0005;
+}
+#panel[data-widget="volume"] input[type="range"]:disabled { cursor: default; }
+#panel[data-widget="volume"] input[type="range"]:disabled::-webkit-slider-thumb { opacity: 0; }
+#panel[data-widget="volume"] :is(input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#panel[data-widget="volume"] .volume-level { min-width: 46px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+#panel[data-widget="volume"] .volume-settings { min-height: 36px; border-radius: 11px; }
+#panel[data-widget="volume"] .volume-external { margin-left: auto; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) {
+  #panel[data-widget="volume"].enter,
+  #panel[data-widget="volume"].enter :is(.volume-card, .volume-settings) { animation: none; }
+  #panel[data-widget="volume"] :is(.volume-mute, .volume-waves, .volume-cross) { transition: none; }
+  #panel[data-widget="volume"] .volume-mute:active:not(:disabled) { transform: none; }
+}

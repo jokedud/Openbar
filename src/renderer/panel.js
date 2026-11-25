@@ -361,6 +361,12 @@ function unmountBluetoothPanel() {
   stopBluetoothPanel = null;
 }
 
+let stopVolumePanel;
+function unmountVolumePanel() {
+  stopVolumePanel?.();
+  stopVolumePanel = null;
+}
+
 function animateIn() {
   const el = $('panel');
   devinSizeObserver?.disconnect();
@@ -391,29 +397,40 @@ function animateIn() {
 async function draw(force) {
   if (widget === 'network' && force !== 'switch') return;
   if (['brightness', 'battery'].includes(widget) && force !== 'switch') return;
+  if (widget === 'volume') {
+    if (force !== 'switch') return;
+    setHead('Volume');
+    $('body').replaceChildren();
+    stopVolumePanel = mountVolumePanel($('body'));
+    return;
+  }
   if (stable.has(widget) && (!force || (['devin', 'bluetooth'].includes(widget) && force !== 'switch'))) return;
+  const drawing = widget;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
   const fn = P[widget];
   if (widget === 'battery') fn(body);
   else if (fn) await fn(body);
   else setHead(widget);
+  if (drawing !== widget) return;
   const scrolled = force === 'switch' ? [] : [...$('body').querySelectorAll('.hours')].map((el) => el.scrollLeft);
   $('body').replaceChildren(...body.childNodes);
   $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
   observeSurface($('panel'));
-  draw(['devin', 'bluetooth', 'brightness', 'network', 'battery'].includes(widget) ? 'switch' : true).then(animateIn);
+  draw(['devin', 'bluetooth', 'brightness', 'network', 'volume', 'battery'].includes(widget) ? 'switch' : true).then(animateIn);
   OB.on((kind, patch) => { if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic(); draw(kind === 'settings'); });
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
+  api.on('volume:hidden', unmountVolumePanel);
   api.on('panel:widget', (w) => {
     unmountBluetoothPanel();
     clearBrightness();
     disposeNetworkPanel();
+    unmountVolumePanel();
     unmountBatteryPanel();
     widget = w; query = ''; sel = 0;
-    draw('switch').then(animateIn);
+    draw('switch').then(() => { if (widget === w) animateIn(); });
   });
   api.on('panel', (w) => {
     if (w !== 'bluetooth') unmountBluetoothPanel();
