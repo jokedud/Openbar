@@ -15,7 +15,7 @@ test('window polls retain dock order when Windows changes the Z-order', async ()
     getAppMetrics: () => [],
   };
   const win32 = {
-    listTaskbarWindows: () => zOrder.map((hwnd) => ({ hwnd, pid: hwnd, cls: 'test', title: String(hwnd) })),
+    listTaskbarWindows: () => zOrder.map((hwnd) => ({ hwnd, pid: hwnd, cls: hwnd % 2 ? 'notepad' : 'wordpad', title: String(hwnd) })),
     processPath: () => '',
     foregroundWindow: () => zOrder[0],
   };
@@ -36,4 +36,34 @@ test('window polls retain dock order when Windows changes the Z-order', async ()
   assert.equal(vm.runInContext('state.activeHwnd', context), 3);
   zOrder = [4, 3, 1];
   assert.deepEqual(await poll(), [1, 3, 4]);
+
+  const actions = [];
+  const renderer = vm.createContext({
+    OB: {
+      state: vm.runInContext('state', context),
+      settings: { pinned: [], groupWindows: true },
+      init: () => new Promise(() => {}),
+    },
+    api: { invoke: (...args) => actions.push(args) },
+    navigator: {},
+    document: { addEventListener() {} },
+    h: (_tag, attrs) => ({ attrs, children: [], append(child) { this.children.push(child); } }),
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'bar.js'), 'utf8'), renderer);
+  const clickNotepad = () => vm.runInContext("cycle(OB.state.windows.filter((w) => w.exe === 'notepad'))", renderer);
+  zOrder = [5, 6, 7];
+  await poll();
+  zOrder = [6, 7, 5];
+  await poll();
+  clickNotepad();
+  assert.deepEqual(actions.pop(), ['win:action', 7, 'focus']);
+  zOrder = [7, 6, 5];
+  await poll();
+  clickNotepad();
+  assert.deepEqual(actions.pop(), ['win:action', 5, 'focus']);
+
+  zOrder = [6, 7];
+  await poll();
+  const groups = vm.runInContext("W.apps().children.map((button) => button.attrs['data-hwnds'])", renderer);
+  assert.deepEqual(Array.from(groups), ['7', '6']);
 });
