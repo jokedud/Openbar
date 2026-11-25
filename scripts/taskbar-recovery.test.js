@@ -76,8 +76,8 @@ test('migration commits the legacy baseline before replacing the old restore rec
       assert.equal(recovery.pending().autohide, legacy.autohide);
       throw new Error('interrupted migration');
     },
-  }, { ABS_AUTOHIDE: 1, hasTaskbar: () => true, getTaskbarState: () => 1, taskbarVisibilityIs: () => true });
-  assert.throws(apply, /interrupted migration/);
+  }, { ABS_AUTOHIDE: 1, taskbarWindows: () => [1], getTaskbarState: () => 1, taskbarVisibilityIs: () => true });
+  return assert.rejects(apply, /interrupted migration/);
 });
 
 test('the recovery worker discards a prepared journal without restoring Windows settings', { skip: process.platform !== 'win32' }, (t) => {
@@ -95,7 +95,7 @@ test('the recovery worker discards a prepared journal without restoring Windows 
   assert.equal(recovery.pending(), null);
 });
 
-test('an unchanged hidden taskbar is restored if its recovery worker stops', (t) => {
+test('an unchanged hidden taskbar is restored if its recovery worker stops', async (t) => {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'openbar-recovery-'));
   t.after(() => fs.rmSync(profile, { recursive: true, force: true }));
   const recovery = new TaskbarRecovery(profile);
@@ -104,6 +104,8 @@ test('an unchanged hidden taskbar is restored if its recovery worker stops', (t)
   fs.writeFileSync(readyFile, String(process.pid));
   let visible = true;
   let autohide = false;
+  let hwnd = 1;
+  let reads = 0;
   let data = {};
   const apply = loadTaskbar(recovery, {
     get: () => data,
@@ -112,24 +114,33 @@ test('an unchanged hidden taskbar is restored if its recovery worker stops', (t)
   }, {
     ABS_AUTOHIDE: 1,
     hasTaskbar: () => true,
-    getTaskbarState: () => Number(autohide),
+    taskbarWindows: () => [hwnd],
+    getTaskbarState: () => { reads++; return Number(autohide); },
     taskbarVisibilityIs: (value) => visible === value,
     setTaskbarAutoHide: (value) => { autohide = value; },
     setTaskbarVisible: (value) => { visible = value; return true; },
   });
-  apply();
+  await apply();
   assert.equal(visible, false);
   assert.equal(autohide, true);
+  const appliedReads = reads;
+  await apply();
+  assert.equal(reads, appliedReads);
+  hwnd = 2;
+  visible = true;
+  await apply();
+  assert.equal(visible, false);
+  assert.ok(reads > appliedReads);
   fs.unlinkSync(readyFile);
 
-  apply();
+  await apply();
   assert.equal(visible, true);
   assert.equal(autohide, false);
   assert.deepEqual(launch.mock.calls.at(-1).arguments[1].slice(-3), ['-Id', recovery.id, '-Resume']);
   assert.equal(fs.existsSync(path.join(recovery.folder, recovery.id + '.release')), true);
 
   fs.unlinkSync(recovery.file);
-  apply();
+  await apply();
   assert.equal(recovery.pending(), null);
   assert.equal(visible, true);
 });
