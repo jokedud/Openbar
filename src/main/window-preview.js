@@ -1,6 +1,6 @@
 'use strict';
 const path = require('path');
-const { Menu, screen } = require('electron');
+const { BrowserWindow, Menu, screen } = require('electron');
 
 const CARD_WIDTH = 224;
 const CARD_HEIGHT = 170;
@@ -11,6 +11,10 @@ const LIST_ROW_HEIGHT = 36;
 const GAP_FROM_BAR = 8;
 const OPEN_DELAY_MS = 260;
 const HIDE_DELAY_MS = 260;
+const PEEK_DELAY_MS = 220;
+const PEEK_HTML = 'data:text/html;charset=utf-8,' + encodeURIComponent(
+  '<!doctype html><style>html,body{margin:0;width:100%;height:100%;background:rgba(10,14,22,0.46);overflow:hidden;pointer-events:none;}</style>'
+);
 
 function padBounds({ x, y, width, height }, padding) {
   return { x: x - padding, y: y - padding, width: width + 2 * padding, height: height + 2 * padding };
@@ -76,15 +80,48 @@ function computePreviewBounds({ anchorX, barRect, displayBounds, windowCount, po
   return { surface, bounds: padBounds(surface, shadowPadding), compact: isCompact };
 }
 
+function computePeekRect({ targetBounds, displayBounds, workArea, scaleFactor = 1, sourceSize, restoreToMaximized = false, screenToDipRect }) {
+  if (!displayBounds) return null;
+  const sf = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  let dip;
+  if (restoreToMaximized && workArea) {
+    dip = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
+  } else if (targetBounds && targetBounds.right > targetBounds.left && targetBounds.bottom > targetBounds.top) {
+    const phys = {
+      x: targetBounds.left,
+      y: targetBounds.top,
+      width: targetBounds.right - targetBounds.left,
+      height: targetBounds.bottom - targetBounds.top,
+    };
+    if (typeof screenToDipRect === 'function') {
+      dip = screenToDipRect(null, phys);
+    } else {
+      dip = { x: phys.x / sf, y: phys.y / sf, width: phys.width / sf, height: phys.height / sf };
+    }
+  } else if (workArea) {
+    dip = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
+  } else {
+    return null;
+  }
+
+  const left = Math.max(displayBounds.x, Math.min(dip.x, displayBounds.x + displayBounds.width - 1));
+  const top = Math.max(displayBounds.y, Math.min(dip.y, displayBounds.y + displayBounds.height - 1));
+  const right = Math.max(left + 1, Math.min(dip.x + dip.width, displayBounds.x + displayBounds.width));
+  const bottom = Math.max(top + 1, Math.min(dip.y + dip.height, displayBounds.y + displayBounds.height));
+  const slot = { x: left - displayBounds.x, y: top - displayBounds.y, width: right - left, height: bottom - top };
+  return fitThumbnailRect(slot, sourceSize, sf);
+}
+
 class WindowPreviewController {
   constructor({
-    createSurfaceWindow, syncBackdrop, getBarBounds, getSettings, getState,
+    createSurfaceWindow, syncBackdrop, getBarBounds, raiseDock, getSettings, getState,
     win32, isWin, preload, rendererDir, iconPath, shadowPadding = 24,
     onPollWindows, timers = {},
   }) {
     this.createSurfaceWindow = createSurfaceWindow;
     this.syncBackdrop = syncBackdrop;
     this.getBarBounds = getBarBounds;
+    this.raiseDock = typeof raiseDock === 'function' ? raiseDock : null;
     this.getSettings = getSettings;
     this.getState = getState;
     this.win32 = win32;
@@ -105,6 +142,12 @@ class WindowPreviewController {
     this.menuOpen = false;
     this.openTimer = null;
     this.hideTimer = null;
+    this.peekTimer = null;
+    this.peekWin = null;
+    this.peekHwnd = 0;
+    this.peekThumbId = 0;
+    this.peekTargetHwnd = 0;
+    this.peekActive = false;
     this.current = null; // { appKey, hwnds, anchorX, compact }
     this.thumbnails = new Map(); // srcHwnd -> thumbId
     this.lastPayload = null;
@@ -121,6 +164,7 @@ class WindowPreviewController {
   clearTimers() {
     if (this.openTimer) { this.clearTimer(this.openTimer); this.openTimer = null; }
     if (this.hideTimer) { this.clearTimer(this.hideTimer); this.hideTimer = null; }
+    if (this.peekTimer) { this.clearTimer(this.peekTimer); this.peekTimer = null; }
   }
 
   resolveWindows(request) {
@@ -189,6 +233,7 @@ class WindowPreviewController {
 
   leaveSurface() {
     this.pointerInPreview = false;
+    this.clearPeek();
     if (this.visible && !this.menuOpen) {
       this.scheduleHide();
     }
@@ -295,6 +340,7 @@ class WindowPreviewController {
 
   hide() {
     this.clearTimers();
+    this.clearPeek();
     this.pointerInPreview = false;
     this.menuOpen = false;
     this.visible = false;
@@ -313,7 +359,126 @@ class WindowPreviewController {
       this.hide();
       return;
     }
+    if (this.peekActive && this.peekTargetHwnd && !live.some((w) => w.hwnd === this.peekTargetHwnd)) {
+      this.clearPeek();
+    }
     this.showFor(this.current, live, true);
+  }
+
+  ensurePeekWindow(bounds) {
+    if (this.peekWin && !this.peekWin.isDestroyed()) return this.peekWin;
+    if (typeof BrowserWindow !== 'function') return null;
+    this.peekWin = new BrowserWindow({
+      ...bounds, frame: false, transparent: true, backgroundColor: '#00000000',
+      resizable: false, movable: false, minimizable: false, maximizable: false,
+      skipTaskbar: true, alwaysOnTop: true, focusable: false, hasShadow: false, show: false,
+      title: 'OpenBar window peek',
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+    });
+    this.peekWin.setIgnoreMouseEvents(true);
+    this.peekWin.setAlwaysOnTop(true, 'floating');
+    if (this.isWin && this.win32) {
+      this.peekHwnd = this.win32.hwndFromBuffer(this.peekWin.getNativeWindowHandle());
+    }
+    this.peekWin.on('closed', () => {
+      this.peekWin = null;
+      this.peekHwnd = 0;
+      this.peekThumbId = 0;
+      this.peekActive = false;
+      this.peekTargetHwnd = 0;
+    });
+    this.peekWin.loadURL(PEEK_HTML);
+    return this.peekWin;
+  }
+
+  peekWindow(hwnd) {
+    const h = Number(hwnd);
+    if (this.peekTimer) { this.clearTimer(this.peekTimer); this.peekTimer = null; }
+    if (!this.isWin || !this.win32 || !this.visible || this.menuOpen || !Number.isFinite(h) || h <= 0) {
+      this.clearPeek();
+      return;
+    }
+    if (this.peekActive && this.peekTargetHwnd === h) return;
+    this.peekTargetHwnd = h;
+    if (this.peekActive) {
+      this.showPeek(h);
+      return;
+    }
+    this.peekTimer = this.setTimer(() => {
+      this.peekTimer = null;
+      if (this.visible && this.pointerInPreview && !this.menuOpen && this.peekTargetHwnd === h) {
+        this.showPeek(h);
+      }
+    }, PEEK_DELAY_MS);
+  }
+
+  showPeek(hwnd) {
+    if (!this.isWin || !this.win32 || !this.visible || this.menuOpen || !this.win32.IsWindow(hwnd)) {
+      this.clearPeek();
+      return;
+    }
+    const targetBounds = typeof this.win32.windowBoundsForPeek === 'function' ? this.win32.windowBoundsForPeek(hwnd) : null;
+    const barRect = this.getBarBounds();
+    let display = barRect ? screen.getDisplayMatching(barRect) : screen.getPrimaryDisplay();
+    if (targetBounds && targetBounds.right > targetBounds.left && targetBounds.bottom > targetBounds.top) {
+      const phys = { x: targetBounds.left, y: targetBounds.top, width: targetBounds.right - targetBounds.left, height: targetBounds.bottom - targetBounds.top };
+      const dip = typeof screen.screenToDipRect === 'function' ? screen.screenToDipRect(null, phys) : phys;
+      display = screen.getDisplayMatching(dip) || display;
+    }
+    if (!display) return;
+
+    const peekWin = this.ensurePeekWindow(display.bounds);
+    if (!peekWin || !this.peekHwnd) return;
+    const prev = peekWin.getBounds();
+    if (prev.x !== display.bounds.x || prev.y !== display.bounds.y ||
+        prev.width !== display.bounds.width || prev.height !== display.bounds.height) {
+      peekWin.setBounds(display.bounds);
+    }
+
+    if (this.peekThumbId) {
+      try { this.win32.unregisterThumbnail(this.peekThumbId); } catch (_) { /* ignore */ }
+      this.peekThumbId = 0;
+    }
+    const thumbId = this.win32.registerThumbnail(this.peekHwnd, hwnd);
+    if (!thumbId) {
+      this.clearPeek();
+      return;
+    }
+    this.peekThumbId = thumbId;
+    const sourceSize = this.win32.queryThumbnailSourceSize(thumbId);
+    const rect = computePeekRect({
+      targetBounds,
+      displayBounds: display.bounds,
+      workArea: display.workArea || display.bounds,
+      scaleFactor: display.scaleFactor || 1,
+      sourceSize,
+      restoreToMaximized: !!targetBounds?.restoreToMaximized,
+      screenToDipRect: typeof screen.screenToDipRect === 'function' ? screen.screenToDipRect.bind(screen) : null,
+    });
+    if (!rect) {
+      this.clearPeek();
+      return;
+    }
+    this.win32.updateThumbnail(thumbId, { ...rect, opacity: 255, visible: true, clientAreaOnly: false });
+    this.peekActive = true;
+    this.peekTargetHwnd = hwnd;
+    if (!peekWin.isVisible()) peekWin.showInactive();
+    peekWin.setAlwaysOnTop(true, 'floating');
+    this.raiseDock?.();
+    if (this.win && !this.win.isDestroyed()) this.win.setAlwaysOnTop(true, 'screen-saver');
+  }
+
+  clearPeek() {
+    if (this.peekTimer) { this.clearTimer(this.peekTimer); this.peekTimer = null; }
+    if (this.peekThumbId && this.isWin && this.win32) {
+      try { this.win32.unregisterThumbnail(this.peekThumbId); } catch (_) { /* ignore */ }
+    }
+    this.peekThumbId = 0;
+    this.peekTargetHwnd = 0;
+    this.peekActive = false;
+    if (this.peekWin && !this.peekWin.isDestroyed() && this.peekWin.isVisible()) {
+      this.peekWin.hide();
+    }
   }
 
   clearThumbnails() {
@@ -372,16 +537,16 @@ class WindowPreviewController {
     const h = Number(hwnd);
     if (!this.isWin || !this.win32 || !Number.isFinite(h) || h <= 0 || !this.win32.IsWindow(h)) return false;
     if (action === 'focus') {
-      this.win32.focusWindow(h);
       this.hide();
+      this.win32.focusWindow(h);
     } else if (action === 'restore') {
+      this.hide();
       this.win32.restoreWindow(h);
       this.win32.focusWindow(h, { restore: false });
-      this.hide();
     } else if (action === 'maximize') {
+      this.hide();
       this.win32.maximizeWindow(h);
       this.win32.focusWindow(h, { restore: false });
-      this.hide();
     } else if (action === 'minimize') {
       this.win32.minimizeWindow(h);
     } else if (action === 'close') {
@@ -401,6 +566,7 @@ class WindowPreviewController {
     if (!target) return;
 
     this.menuOpen = true;
+    this.clearPeek();
     if (this.hideTimer) { this.clearTimer(this.hideTimer); this.hideTimer = null; }
 
     const menu = Menu.buildFromTemplate([
@@ -421,7 +587,13 @@ class WindowPreviewController {
 
   destroy() {
     this.clearTimers();
+    this.clearPeek();
     this.clearThumbnails();
+    if (this.peekWin && !this.peekWin.isDestroyed()) {
+      this.peekWin.destroy();
+    }
+    this.peekWin = null;
+    this.peekHwnd = 0;
     if (this.win && !this.win.isDestroyed()) {
       this.win.destroy();
     }
@@ -433,6 +605,7 @@ class WindowPreviewController {
 module.exports = {
   WindowPreviewController,
   computePreviewBounds,
+  computePeekRect,
   fitThumbnailRect,
   CARD_WIDTH,
   CARD_HEIGHT,
@@ -440,4 +613,5 @@ module.exports = {
   SURFACE_PAD,
   OPEN_DELAY_MS,
   HIDE_DELAY_MS,
+  PEEK_DELAY_MS,
 };

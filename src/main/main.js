@@ -16,6 +16,7 @@ const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require(
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 const { createBattery, openPowerSettings } = require('./battery');
 const { WindowPreviewController } = require('./window-preview');
+const { TrayApps, trayLayoutMigration } = require('./tray-apps');
 const windowPoll = require('./window-poll');
 const { SurfaceInput } = require('./surface-input');
 
@@ -50,7 +51,7 @@ let barHwnd = 0;
 let panelWidget = null;
 let overflowItems = [];
 let devinPanelSize = null;
-let batteryNative, batteryEstimate;
+let batteryNative, batteryEstimate, trayApps;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
@@ -233,6 +234,7 @@ function scheduleTaskbar(force = false) {
 }
 
 async function applyTaskbar() {
+  if (!isWin || trayApps?.busy) return;
   const pending = taskbarRecovery.pending();
   if (pending && pending.id !== taskbarRecovery.id) {
     taskbarRecovery.resume(pending);
@@ -564,6 +566,7 @@ const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 4
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
+PANEL_SIZES.trayApps = [328, 320];
 PANEL_SIZES.overflow = [352, 440];
 PANEL_SIZES.tabOverflow = PANEL_SIZES.overflow;
 const isFolderPanel = (widget) => widget === 'overflow' || widget === 'tabOverflow';
@@ -622,6 +625,7 @@ function togglePanel(widget, anchorX, items) {
     });
     panel.setAlwaysOnTop(true, 'screen-saver');
     panel.on('blur', () => {
+      if (panelWidget === 'trayApps' && trayApps?.busy) return;
       if (panel && panel.isVisible() && !panel.webContents.isDevToolsOpened()) {
         cancelPendingPanelShow();
         panel.hide();
@@ -906,6 +910,37 @@ function registerIpc() {
     closePanel();
     if (bar && !bar.isDestroyed()) bar.webContents.send('bar:select-tab', id);
   });
+  const fromTrayPanel = (e) => isWin && panelWidget === 'trayApps' && e.sender === panel?.webContents;
+  ipcMain.handle('tray-apps:list', async (e) => {
+    if (!fromTrayPanel(e) || trayApps.busy) return null;
+    const seq = panelShowSeq;
+    const isCurrent = () => seq === panelShowSeq && fromTrayPanel(e);
+    if (taskbarWork) await taskbarWork;
+    if (!isCurrent()) return null;
+    const items = await trayApps.list(isCurrent);
+    if (isCurrent() && panel.isVisible() && !panel.isFocused()) panel.focus();
+    return items;
+  });
+  ipcMain.handle('tray-apps:activate', async (e, id, kind) => {
+    if (!fromTrayPanel(e) || !panel.isVisible()) return false;
+    const seq = panelShowSeq;
+    if (taskbarWork) await taskbarWork;
+    if (seq !== panelShowSeq || !fromTrayPanel(e) || !panel.isVisible()) return false;
+    let hidden = false;
+    const success = await trayApps.activate(id, kind, () => {
+      if (seq !== panelShowSeq || !fromTrayPanel(e)) return false;
+      panel.hide();
+      hidden = true;
+      return true;
+    });
+    if (seq !== panelShowSeq || !fromTrayPanel(e)) return success;
+    if (success) {
+      cancelPendingPanelShow();
+      panelWidget = null;
+      broadcast('panel', null);
+    } else if (hidden) showPanel(seq);
+    return success;
+  });
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
   ipcMain.handle('panel:close', closePanel);
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));
@@ -943,6 +978,7 @@ function registerPreviewIpc() {
   ipcMain.on('preview:enter-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.enterSurface(); });
   ipcMain.on('preview:leave-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.leaveSurface(); });
   ipcMain.on('preview:slots', (e, slots) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.updateThumbnailSlots(slots); });
+  ipcMain.on('preview:peek', (e, hwnd) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.peekWindow(hwnd); });
   ipcMain.handle('preview:action', (e, hwnd, action) => (windowPreview?.webContentsMatches(e.sender) ? windowPreview.performAction(hwnd, action) : false));
   ipcMain.handle('preview:context-menu', (e, hwnd) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.openContextMenu(hwnd); });
 }
@@ -970,11 +1006,13 @@ app.whenReady().then(() => {
   if (isWin) {
     taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
     batteryNative = createBattery();
+    trayApps = new TrayApps(undefined, exeIcon);
   }
   windowPreview = new WindowPreviewController({
     createSurfaceWindow,
     syncBackdrop,
     getBarBounds: () => (bar && !bar.isDestroyed() ? padBounds(bar.getBounds(), -barShadowPadding()) : null),
+    raiseDock: () => { if (bar && !bar.isDestroyed()) bar.setAlwaysOnTop(true, 'screen-saver'); },
     getSettings: S,
     getState: () => state,
     win32,
@@ -989,6 +1027,8 @@ app.whenReady().then(() => {
   migrateBluetoothLayout();
   const volumeMigration = volumeLayoutMigration(S());
   if (volumeMigration) settingsStore.set(volumeMigration);
+  const trayMigration = trayApps && trayLayoutMigration(S());
+  if (trayMigration) settingsStore.set(trayMigration);
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
       { name: 'File Explorer', path: path.join(process.env.SystemRoot || 'C:/Windows', 'explorer.exe') },

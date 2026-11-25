@@ -546,6 +546,14 @@ function shouldRedraw(kind, patch) {
 async function draw(force) {
   if (isFolderPanel(widget)) return force === 'switch' ? drawOverflow() : undefined;
   if (widget === 'network' && force !== 'switch') return;
+  if (widget === 'trayApps') {
+    if (force !== 'switch') return;
+    const target = h('div', { class: 'tray-apps' });
+    $('body').replaceChildren(target);
+    setHead('Background apps', actionBtn('refresh', 'Refresh background apps', () => loadTrayApps(target)));
+    loadTrayApps(target);
+    return;
+  }
   if (['brightness', 'battery'].includes(widget) && force !== 'switch') return;
   if (widget === 'volume') {
     if (force !== 'switch') return;
