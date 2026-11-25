@@ -259,6 +259,7 @@ test('preview card click survives live preview:data updates without detaching th
   assert.equal(r.sameNode, true, 'preview card DOM node should be patched in place across live updates');
   assert.equal(r.title, 'Draft 2 - Notepad');
   assert.deepEqual(r.actions, [[42, 'focus']]);
+  assert.equal(r.reopenSlotReports > r.beforeReopenSlotReports, true, 'reopening the same windows should re-report thumbnail slots');
 });
 }
 
@@ -267,13 +268,14 @@ async function runPreviewInteractionCheck() {
   const src = path.join(__dirname, '..', 'src');
   await app.whenReady();
   const actions = [];
+  let slotReports = 0;
   ipcMain.handle('init', () => ({
     settings: { layout: 'pill', position: 'bottom', style: 'glass', height: 54, margin: 10 },
     data: {}, state: { glass: 'off' }, platform: 'win32', version: '0.1.2',
   }));
   ipcMain.on('surface:bounds', () => {});
   ipcMain.on('surface:mouse', () => {});
-  ipcMain.on('preview:slots', () => {});
+  ipcMain.on('preview:slots', (_e, slots) => { if (Array.isArray(slots) && slots.length) slotReports++; });
   ipcMain.handle('preview:action', (_e, hwnd, action) => { actions.push([hwnd, action]); return true; });
   const win = new BrowserWindow({
     x: 80, y: 80, width: 320, height: 240,
@@ -307,6 +309,11 @@ async function runPreviewInteractionCheck() {
     sameNode: document.querySelector('.preview-card') === window.__card,
     title: document.querySelector('.preview-title')?.textContent,
   })`);
+  const beforeReopenSlotReports = slotReports;
+  win.webContents.send('preview:data', { ...payload('Draft 2 - Notepad', true), switching: false });
+  await win.webContents.executeJavaScript('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
+  await new Promise((r) => setTimeout(r, 30));
+  const reopenSlotReports = slotReports;
   win.destroy();
-  return { actions, ...check };
+  return { actions, beforeReopenSlotReports, reopenSlotReports, ...check };
 }

@@ -180,7 +180,7 @@ function renderPreview(payload) {
 
   const prevKeys = (prevPayload?.windows || []).map((w) => w.hwnd).join(',');
   const nextKeys = wins.map((w) => w.hwnd).join(',');
-  if (!prevPayload || prevPayload.compact !== compact || prevPayload.hasLiveThumbnails !== hasLive || prevKeys !== nextKeys) {
+  if (!payload?.switching || !prevPayload || prevPayload.compact !== compact || prevPayload.hasLiveThumbnails !== hasLive || prevKeys !== nextKeys) {
     requestAnimationFrame(reportThumbnailSlots);
   }
 }
