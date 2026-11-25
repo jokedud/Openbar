@@ -226,7 +226,7 @@ T.devin = (m) => {
   const removeKey = h('button', { class: 'btn', onclick: () => update('devin:remove') }, 'Remove API key');
   m.append(h('h1', {}, 'Devin'), h('p', { class: 'lead' }, 'Open Devin Cloud sessions right from the dock. The public Devin API does not list local desktop sessions.'),
     field('API key', 'Create a personal access token in Devin under Settings → Devin API. OpenBar encrypts the key on this PC.', key),
-    field('Organization ID', 'Copy this from the top of the same page. Leave it blank for legacy apk_ keys.', organization),
+    field('Organization ID', 'Required for current tokens. Copy it from the top of the same page. Legacy apk_ keys do not use this field.', organization),
     h('div', { class: 'row' }, saveKey, removeKey), status);
   if (!['left', 'center', 'right'].some((zone) => S()[zone].includes('devin'))) {
     m.append(h('button', { class: 'btn', onclick: () => save({ right: [...S().right, 'devin'] }).then(draw) }, 'Add Devin to dock'));

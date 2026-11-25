@@ -525,18 +525,15 @@ function registerDevinIpc() {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
     if (typeof key !== 'string' || typeof organization !== 'string') return { error: 'invalid' };
     const token = key.trim(), orgId = organization.trim();
-    if (!token) {
-      const saved = devinStore.get();
-      if (!saved.encrypted) return { error: 'invalid' };
-      if ((orgId || saved.orgId) && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
-      return saveDevinConfig({ encrypted: saved.encrypted, orgId });
-    }
-    if (/\s/.test(token)) return { error: 'invalid' };
-    if (!token.startsWith('apk_') && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
+    const saved = devinStore.get();
+    if ((!token && !saved.encrypted) || /\s/.test(token)) return { error: 'invalid' };
     if (!storageAvailable()) return { error: 'storage' };
     try {
-      const encrypted = safeStorage.encryptString(token).toString('base64');
-      return saveDevinConfig({ encrypted, orgId: token.startsWith('apk_') ? '' : orgId });
+      const activeToken = token || safeStorage.decryptString(Buffer.from(saved.encrypted, 'base64'));
+      const legacy = activeToken.startsWith('apk_');
+      if (!legacy && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
+      const encrypted = token ? safeStorage.encryptString(token).toString('base64') : saved.encrypted;
+      return saveDevinConfig({ encrypted, orgId: legacy ? '' : orgId });
     } catch {
       return { error: 'storage' };
     }

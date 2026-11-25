@@ -102,7 +102,7 @@ test('the Devin bubble stays six pixels from the visible dock at either edge', (
   assert.equal(bounds.y, context.dock.y + context.dock.height - settings.margin + 6);
 });
 
-function mainIpc(initialConfig) {
+function mainIpc(initialConfig, storedToken = 'cog_test') {
   const { deepMerge, DEFAULT_SETTINGS } = requireStore();
   const store = (defaults, initial) => ({
     value: initial, get() { return this.value; }, save() {},
@@ -115,10 +115,15 @@ function mainIpc(initialConfig) {
     whenReady: () => new Promise(() => {}),
   };
   const handlers = new Map(), sender = { send() {} };
-  const electron = { app, ipcMain: { handle: (name, handler) => handlers.set(name, handler) } };
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    decryptString: () => storedToken,
+    encryptString: () => Buffer.from('new ciphertext'),
+  };
+  const electron = { app, safeStorage, ipcMain: { handle: (name, handler) => handlers.set(name, handler) } };
   const context = vm.createContext({
     require: (name) => ({ path, electron, './devin': require('../src/main/devin'), './store': { DEFAULT_SETTINGS } })[name] || {},
-    __dirname, settings, credentials, sender, process: { platform: 'test', on() {} },
+    __dirname, Buffer, settings, credentials, sender, process: { platform: 'test', on() {} },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8'), context);
   vm.runInContext('settingsStore = settings; devinStore = credentials; settingsWin = { webContents: sender, isDestroyed: () => false }; registerIpc();', context);
@@ -141,6 +146,16 @@ test('organization-only changes retain the stored encrypted token', () => {
   assert.equal(invoke('devin:save', '', '').error, 'organization');
   assert.equal(credentials.get().orgId, 'org-new');
   assert.equal(mainIpc({ encrypted: '', orgId: '' }).invoke('devin:save', '', 'org-new').error, 'invalid');
+});
+
+test('new and stored legacy keys ignore organization IDs and allow a blank field', () => {
+  const { credentials, invoke } = mainIpc({ encrypted: 'existing-ciphertext', orgId: 'org-old' }, 'apk_user_test');
+  assert.equal(invoke('devin:save', '', '').orgId, '');
+  assert.equal(invoke('devin:save', '', 'org-other').orgId, '');
+  assert.equal(credentials.get().encrypted, 'existing-ciphertext');
+  assert.equal(invoke('devin:save', 'apk_user_new', 'org-other').orgId, '');
+  assert.equal(invoke('devin:save', 'apk_user_new', '').configured, true);
+  assert.equal(credentials.get().orgId, '');
 });
 
 test('reset settings removes the saved Devin token and organization', () => {
