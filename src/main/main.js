@@ -696,8 +696,7 @@ app.whenReady().then(() => {
   if (isWin) companion = new DevinCompanion({
     preload: PRELOAD, listLocal: devin.listLocalSessions, listCloud: listCloudDevinSessions,
     foregroundBounds: () => {
-      const hwnd = win32.foregroundWindow();
-      const bounds = state.windows.some((w) => w.hwnd === hwnd && !w.minimized) && win32.windowBounds(hwnd);
+      const bounds = win32.foregroundWindowBounds(process.pid);
       return bounds ? screen.screenToDipRect(null, bounds) : null;
     },
   });

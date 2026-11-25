@@ -154,7 +154,10 @@ function focusWindow(hwnd) {
 function minimizeWindow(hwnd) { return ShowWindow(hwnd, SW_MINIMIZE); }
 function closeWindow(hwnd) { return PostMessageW(hwnd, WM_CLOSE, 0, 0); }
 function foregroundWindow() { return Number(GetForegroundWindow()); }
-function windowBounds(hwnd) {
+function foregroundWindowBounds(excludePid) {
+  const hwnd = foregroundWindow();
+  if (!hwnd || !IsWindowVisible(hwnd) || IsIconic(hwnd) || isCloaked(hwnd) ||
+    processId(hwnd) === excludePid || IGNORED_CLASSES.has(className(hwnd))) return null;
   const rect = {};
   if (!GetWindowRect(hwnd, rect)) return null;
   return { x: rect.left, y: rect.top, width: rect.right - rect.left, height: rect.bottom - rect.top };
@@ -263,7 +266,7 @@ function setRoundRegion(hWnd, r) {
 }
 
 module.exports = {
-  listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, windowBounds, IsWindow: (h) => IsWindow(h),
+  listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, foregroundWindowBounds, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
