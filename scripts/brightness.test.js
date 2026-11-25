@@ -95,7 +95,9 @@ function Invoke-CimMethod($InputObject, $MethodName, $Arguments) {
 }
 `;
       const command = prefix + Buffer.from(args.at(-1), 'base64').toString('utf16le');
-      return exec(file, [...args.slice(0, -1), Buffer.from(command, 'utf16le').toString('base64')], options);
+      // Each probe still runs PowerShell, which a busy runner can slow past the interactive timeout.
+      return exec(file, [...args.slice(0, -1), Buffer.from(command, 'utf16le').toString('base64')],
+        { ...options, timeout: 15000 });
     };
     const levels = [0, 20, 75, 100];
     assert.deepEqual(await runBrightness(undefined, fixture(0)), { level: 20, levels, failed: false });
