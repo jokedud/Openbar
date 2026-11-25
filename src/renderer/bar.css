@@ -30,6 +30,8 @@ body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc
 .stack { display: flex; flex-direction: column; gap: 3px; line-height: 1; text-align: left; }
 .stack > :first-child { font-weight: 600; font-size: 12.5px; }
 .stack.meters > * { font-weight: 600; font-size: 9.5px; color: var(--muted); letter-spacing: .02em; }
+.network-rates { font-size: 10px; font-weight: 600; width: 14ch; }
+.network-rates > .val { font-size: inherit; }
 .apps { display: flex; align-items: center; gap: 3px; height: 100%; overflow: hidden; }
 .app { position: relative; justify-content: center; gap: 8px; min-width: var(--tile-h); padding: 0 calc(var(--tile-h) * .2); max-width: 220px; }
 .app img, .app .ph { width: calc(var(--tile-h) * .58); height: calc(var(--tile-h) * .58); flex: none; border-radius: 22%; object-fit: contain; }

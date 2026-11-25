@@ -94,8 +94,8 @@ W.system = () => {
 };
 W.network = () => {
   const n = OB.state.net;
-  return panelBtn('network', '', icon('wifi', 16), n ? h('div', { class: 'stack', style: { fontSize: '10px', minWidth: '58px' } },
-    h('span', { class: 'val' }, '↓ ' + fmt.rate(n.down)), h('span', { class: 'val' }, '↑ ' + fmt.rate(n.up))) : null);
+  return panelBtn('network', '', icon('wifi', 16), h('div', { class: 'stack network-rates' },
+    n && h('span', { class: 'val' }, '↓ ' + fmt.rate(n.down)), n && h('span', { class: 'val' }, '↑ ' + fmt.rate(n.up))));
 };
 let battery = null;
 if (navigator.getBattery) navigator.getBattery().then((b) => { battery = b; ['levelchange', 'chargingchange'].forEach((e) => b.addEventListener(e, scheduleRender)); scheduleRender(); });
