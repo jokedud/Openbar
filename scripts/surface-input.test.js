@@ -49,11 +49,19 @@ test('floating surfaces debounce padding entry, keep edge hysteresis, and restor
   flushTimers();
   assert.deepEqual(sends, []);
 
-  // Within the 4px hysteresis halo outside the surface rim: stays clickable.
+  // Within the 4px hysteresis halo outside the straight rim: stays clickable.
   hit = {};
   move({ buttons: 0, clientX: 21, clientY: 50 });
   flushTimers();
   assert.deepEqual(sends, []);
+
+  // Outside the rounded corner arc (even inside the axis-aligned bounding box): allows click-through.
+  move({ buttons: 0, clientX: 24, clientY: 24 });
+  flushTimers();
+  assert.deepEqual(sends, [['surface:mouse', true]]);
+  move({ buttons: 0, clientX: 21, clientY: 50 });
+  assert.deepEqual(sends, [['surface:mouse', true], ['surface:mouse', false]]);
+  sends.length = 0;
 
   // Pressed buttons or touch events over padding never ignore input.
   move({ buttons: 1, clientX: 5, clientY: 5 });

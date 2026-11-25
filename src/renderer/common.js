@@ -84,8 +84,13 @@ function observeSurface(surface) {
     if (typeof surface.getBoundingClientRect !== 'function' ||
         !Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return false;
     const r = surface.getBoundingClientRect();
-    return e.clientX >= r.left - SURFACE_HIT_SLOP && e.clientX <= r.right + SURFACE_HIT_SLOP &&
-      e.clientY >= r.top - SURFACE_HIT_SLOP && e.clientY <= r.bottom + SURFACE_HIT_SLOP;
+    if (e.clientX < r.left - SURFACE_HIT_SLOP || e.clientX > r.right + SURFACE_HIT_SLOP ||
+        e.clientY < r.top - SURFACE_HIT_SLOP || e.clientY > r.bottom + SURFACE_HIT_SLOP) return false;
+    const rad = Math.min(parseFloat(getComputedStyle(surface).borderTopLeftRadius) || 0, (r.right - r.left) / 2, (r.bottom - r.top) / 2);
+    if (rad <= 0) return true;
+    const cx = Math.max(r.left + rad, Math.min(e.clientX, r.right - rad));
+    const cy = Math.max(r.top + rad, Math.min(e.clientY, r.bottom - rad));
+    return Math.hypot(e.clientX - cx, e.clientY - cy) <= rad + SURFACE_HIT_SLOP;
   }
   function checkMouse(e) {
     if (e.buttons || e.sourceCapabilities?.firesTouchEvents) {
