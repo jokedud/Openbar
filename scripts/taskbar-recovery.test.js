@@ -33,3 +33,25 @@ test('taskbar stays unarmed until a live recovery worker acknowledges the saved 
   assert.equal(recovery.arm(true), false);
   assert.equal(recovery.pending().autohide, true);
 });
+
+test('a relaunch resumes an interrupted registration before arming a new worker', (t) => {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'openbar-recovery-'));
+  t.after(() => fs.rmSync(profile, { recursive: true, force: true }));
+  const interrupted = new TaskbarRecovery(profile);
+  assert.equal(interrupted.arm(false), false);
+  const stale = interrupted.pending();
+  const restart = new TaskbarRecovery(profile);
+  const calls = launch.mock.callCount();
+
+  restart.resume(stale);
+  restart.resume(stale);
+  assert.equal(restart.arm(true), false);
+  assert.equal(launch.mock.callCount(), calls + 1);
+  assert.deepEqual(launch.mock.calls[calls].arguments[1].slice(-3), ['-Id', stale.id, '-Resume']);
+  assert.deepEqual(restart.pending(), stale);
+
+  fs.unlinkSync(interrupted.file);
+  assert.equal(restart.arm(false), false);
+  assert.equal(restart.pending().id, restart.id);
+  assert.deepEqual(launch.mock.calls[calls + 1].arguments[1].slice(-3), ['-Id', restart.id, '-Register']);
+});

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][guid]$Id, [switch]$Register)
+param([Parameter(Mandatory=$true)][guid]$Id, [switch]$Register, [switch]$Resume)
 $ErrorActionPreference = 'Stop'
 $file = Join-Path $PSScriptRoot 'state.json'
 $ready = Join-Path $PSScriptRoot "$Id.ready"
@@ -15,19 +15,29 @@ function Read-State {
 
 $state = Read-State
 if (-not $state) {
-  if (-not $Register) { Unregister-ScheduledTask -TaskName $task -Confirm:$false }
+  if (-not ($Register -or $Resume)) { Unregister-ScheduledTask -TaskName $task -Confirm:$false }
   return
 }
-if ($Register) {
-  $owner = Get-Process -Id $state.pid
+if ($Register -or $Resume) {
+  if ($Resume -and (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue)) {
+    Start-ScheduledTask -TaskName $task
+    return
+  }
   $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
   $powershell = Join-Path $PSHOME 'powershell.exe'
   $action = New-ScheduledTaskAction -Execute $powershell -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Id {1}' -f $PSCommandPath,$Id)
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
   $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
-  [IO.File]::WriteAllText((Join-Path $PSScriptRoot "$Id.owner"), [string]$owner.StartTime.ToFileTimeUtc())
-  Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
+  if ($Register) {
+    $owner = Get-Process -Id $state.pid
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot "$Id.owner"), [string]$owner.StartTime.ToFileTimeUtc())
+  }
+  try {
+    Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
+  } catch {
+    if (-not $Resume -or -not (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue)) { throw }
+  }
   Start-ScheduledTask -TaskName $task
   return
 }

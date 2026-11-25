@@ -4,6 +4,16 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const { execFile } = require('child_process');
 
+function launchWorker(folder, id, mode, callback) {
+  const script = path.join(folder, 'recover.ps1');
+  const tmp = script + '.tmp';
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(tmp, fs.readFileSync(path.join(__dirname, 'taskbar-recovery.ps1')), { flush: true });
+  fs.renameSync(tmp, script);
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  execFile(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Id', id, mode], { windowsHide: true, timeout: 30000 }, callback);
+}
+
 class TaskbarRecovery {
   constructor(profile) {
     this.folder = path.join(profile, 'taskbar-recovery');
@@ -19,6 +29,14 @@ class TaskbarRecovery {
     catch (err) { if (err.code !== 'ENOENT') throw err; return null; }
   }
 
+  resume(state) {
+    if (state.id === this.id || this.resuming === state.id) return;
+    this.resuming = state.id;
+    launchWorker(this.folder, state.id, '-Resume', (err) => {
+      if (err && this.pending()?.id === state.id) console.error('Could not resume Windows taskbar recovery:', err.message);
+    });
+  }
+
   arm(autohide) {
     const state = this.pending();
     if (state && state.id !== this.id) return false;
@@ -29,16 +47,13 @@ class TaskbarRecovery {
     }
     if (!state) {
       if (this.starting) return false;
-      const script = path.join(this.folder, 'recover.ps1');
       fs.mkdirSync(this.folder, { recursive: true });
-      fs.writeFileSync(script, fs.readFileSync(path.join(__dirname, 'taskbar-recovery.ps1')), { flush: true });
       const tmp = this.file + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify({ id: this.id, pid: process.pid, autohide }), { flush: true });
       fs.renameSync(tmp, this.file);
       this.starting = true;
       const id = this.id;
-      const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-      execFile(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Id', id, '-Register'], { windowsHide: true, timeout: 30000 }, (err) => {
+      launchWorker(this.folder, id, '-Register', (err) => {
         if (!err || this.id !== id || this.armed || this.ready()) return;
         this.failed = true;
         console.error('Could not start Windows taskbar recovery:', err.message);

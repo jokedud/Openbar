@@ -114,11 +114,14 @@ function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
 // ---------------- Windows taskbar ----------------
 function applyTaskbar() {
   if (!isWin) return;
+  const pending = taskbarRecovery.pending();
+  if (pending && pending.id !== taskbarRecovery.id) {
+    taskbarRecovery.resume(pending);
+    return;
+  }
   const mode = S().taskbar;
   if (mode === 'keep') { restoreTaskbar(); return; }
   if (!win32.hasTaskbar()) return;
-  const pending = taskbarRecovery.pending();
-  if (pending && pending.id !== taskbarRecovery.id) return;
   const original = D().taskbarRestore;
   const autohide = (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0;
   const baseline = pending?.autohide ?? (original && !original.guarded ? !!original.autohide : autohide);
