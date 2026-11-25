@@ -151,14 +151,12 @@ P.network = (body) => {
   networkPanel = mountNetworkPanel(body);
   setHead('Network', networkPanel.online);
 };
-P.battery = async (body) => {
-  setHead('Battery');
-  const b = navigator.getBattery ? await navigator.getBattery() : null;
-  if (!b) return body.append(empty('No battery detected.'));
-  body.append(h('div', { class: 'card' }, h('div', { class: 'big' }, Math.round(b.level * 100) + '%'), barH(b.level * 100),
-    h('div', { class: 'muted', style: { marginTop: '6px' } }, b.charging ? (b.chargingTime && isFinite(b.chargingTime) ? `Full in ${fmt.dur(b.chargingTime)}` : 'Charging') : (isFinite(b.dischargingTime) ? `${fmt.dur(b.dischargingTime)} remaining` : 'On battery'))));
-  body.append(h('button', { class: 'btn', onclick: () => api.invoke('open', 'ms-settings:batterysaver') }, 'Power & battery settings'));
-};
+let stopBatteryPanel;
+function unmountBatteryPanel() {
+  stopBatteryPanel?.();
+  stopBatteryPanel = null;
+}
+P.battery = (body) => { stopBatteryPanel = mountBatteryPanel(body, setHead); };
 
 // ---------- media ----------
 P.media = (body) => {
@@ -398,7 +396,7 @@ function animateIn() {
 }
 async function draw(force) {
   if (widget === 'network' && force !== 'switch') return;
-  if (widget === 'brightness' && force !== 'switch') return;
+  if (['brightness', 'battery'].includes(widget) && force !== 'switch') return;
   if (widget === 'volume') {
     if (force !== 'switch') return;
     setHead('Volume');
@@ -411,7 +409,9 @@ async function draw(force) {
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
   const fn = P[widget];
-  if (fn) await fn(body); else setHead(widget);
+  if (widget === 'battery') fn(body);
+  else if (fn) await fn(body);
+  else setHead(widget);
   if (drawing !== widget) return;
   const scrolled = force === 'switch' ? [] : [...$('body').querySelectorAll('.hours')].map((el) => el.scrollLeft);
   $('body').replaceChildren(...body.childNodes);
@@ -419,7 +419,7 @@ async function draw(force) {
 }
 OB.init().then(() => {
   observeSurface($('panel'));
-  draw(['devin', 'bluetooth', 'brightness', 'network', 'volume'].includes(widget) ? 'switch' : true).then(animateIn);
+  draw(['devin', 'bluetooth', 'brightness', 'network', 'volume', 'battery'].includes(widget) ? 'switch' : true).then(animateIn);
   OB.on((kind, patch) => { if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic(); draw(kind === 'settings'); });
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
   api.on('volume:hidden', unmountVolumePanel);
@@ -428,6 +428,7 @@ OB.init().then(() => {
     clearBrightness();
     disposeNetworkPanel();
     unmountVolumePanel();
+    unmountBatteryPanel();
     widget = w; query = ''; sel = 0;
     draw('switch').then(() => { if (widget === w) animateIn(); });
   });
@@ -435,6 +436,7 @@ OB.init().then(() => {
     if (w !== 'bluetooth') unmountBluetoothPanel();
     if (w !== 'brightness') clearBrightness();
     if (w !== 'network') disposeNetworkPanel();
+    if (w !== 'battery') unmountBatteryPanel();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });

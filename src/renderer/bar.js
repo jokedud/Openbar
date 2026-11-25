@@ -102,12 +102,13 @@ W.network = () => {
   return panelBtn('network', '', icon('globe', 16), h('div', { class: 'stack network-rates' },
     n && h('span', { class: 'val' }, '↓ ' + fmt.rate(n.down)), n && h('span', { class: 'val' }, '↑ ' + fmt.rate(n.up))));
 };
-let battery = null;
-if (navigator.getBattery) navigator.getBattery().then((b) => { battery = b; ['levelchange', 'chargingchange'].forEach((e) => b.addEventListener(e, scheduleRender)); scheduleRender(); });
 W.battery = () => {
-  if (!battery || (battery.charging && battery.level === 1 && battery.chargingTime === 0)) return null;
-  const pct = Math.round(battery.level * 100);
-  return panelBtn('battery', pct <= 15 && !battery.charging ? 'bad' : '', icon(battery.charging ? 'bolt' : 'battery', 16), h('span', { class: 'val' }, pct + '%'));
+  const b = OB.state.battery;
+  const label = b?.level != null ? `${b.level}%` : b?.pluggedIn === true ? 'Plugged in' : 'Power';
+  const button = panelBtn('battery', b?.low ? 'bad' : '', icon(b?.charging ? 'bolt' : b?.present ? 'battery' : 'power', 16),
+    h('span', { class: 'val' }, label));
+  button.title = b?.present ? `Battery: ${label}${b.charging ? ' · Charging' : ''}` : 'Power settings';
+  return button;
 };
 W.media = () => {
   const m = OB.state.media;
