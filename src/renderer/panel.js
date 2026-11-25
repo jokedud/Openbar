@@ -4,6 +4,8 @@ let widget = new URLSearchParams(location.search).get('widget');
 const $ = (id) => document.getElementById(id);
 const P = {};
 const stable = new Set(['start', 'todos', 'notes', 'devin', 'bluetooth']); // panels with local state: don't rebuild on every tick
+let networkPanel;
+function disposeNetworkPanel() { networkPanel?.dispose(); networkPanel = null; }
 
 function setHead(title, ...actions) { $('title').textContent = title; $('actions').replaceChildren(...actions); }
 const actionBtn = (ic, title, onclick) => h('button', { class: 'btn icon', title, onclick }, icon(ic, 14));
@@ -146,10 +148,8 @@ P.system = (body) => {
   body.append(kv('Uptime', fmt.dur(s.uptime)));
 };
 P.network = (body) => {
-  setHead('Network');
-  const n = OB.state.net;
-  body.append(h('div', { class: 'card' }, kv('Download', fmt.rate(n && n.down)), kv('Upload', fmt.rate(n && n.up)), kv('Online', navigator.onLine ? 'Yes' : 'No')));
-  body.append(h('button', { class: 'btn', onclick: () => api.invoke('open', 'ms-settings:network') }, icon('wifi', 14), 'Network settings'));
+  networkPanel = mountNetworkPanel(body);
+  setHead('Network', networkPanel.online);
 };
 P.battery = async (body) => {
   setHead('Battery');
@@ -397,6 +397,7 @@ function animateIn() {
   el.classList.add('enter');
 }
 async function draw(force) {
+  if (widget === 'network' && force !== 'switch') return;
   if (widget === 'brightness' && force !== 'switch') return;
   if (widget === 'volume') {
     if (force !== 'switch') return;
@@ -418,13 +419,14 @@ async function draw(force) {
 }
 OB.init().then(() => {
   observeSurface($('panel'));
-  draw(['devin', 'bluetooth', 'brightness', 'volume'].includes(widget) ? 'switch' : true).then(animateIn);
-  OB.on((kind) => draw(kind === 'settings'));
+  draw(['devin', 'bluetooth', 'brightness', 'network', 'volume'].includes(widget) ? 'switch' : true).then(animateIn);
+  OB.on((kind, patch) => { if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic(); draw(kind === 'settings'); });
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
   api.on('volume:hidden', unmountVolumePanel);
   api.on('panel:widget', (w) => {
     unmountBluetoothPanel();
     clearBrightness();
+    disposeNetworkPanel();
     unmountVolumePanel();
     widget = w; query = ''; sel = 0;
     draw('switch').then(() => { if (widget === w) animateIn(); });
@@ -432,6 +434,7 @@ OB.init().then(() => {
   api.on('panel', (w) => {
     if (w !== 'bluetooth') unmountBluetoothPanel();
     if (w !== 'brightness') clearBrightness();
+    if (w !== 'network') disposeNetworkPanel();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
