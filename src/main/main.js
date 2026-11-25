@@ -374,11 +374,20 @@ function createTray() {
 }
 
 // ---------------- IPC ----------------
+function syncLoginItem({ onlyIfChanged = false } = {}) {
+  if (!app.isPackaged) return;
+  const path = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const openAtLogin = !!S().launchAtLogin;
+  if (!onlyIfChanged || app.getLoginItemSettings({ path }).openAtLogin !== openAtLogin) {
+    app.setLoginItemSettings({ openAtLogin, path });
+  }
+}
+
 function applySettings(prev) {
   const s = S();
   layoutBar();
   if (prev.taskbar !== s.taskbar) applyTaskbar();
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!s.launchAtLogin, path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath });
+  syncLoginItem();
   if (JSON.stringify(prev.commands) !== JSON.stringify(s.commands)) scheduleCommands();
   if (JSON.stringify(prev.weather) !== JSON.stringify(s.weather)) refreshers.weather();
   if (JSON.stringify(prev.calendars) !== JSON.stringify(s.calendars)) refreshers.calendar();
@@ -480,6 +489,7 @@ app.whenReady().then(() => {
     ] });
     settingsStore.save(true);
   }
+  if (isWin) syncLoginItem({ onlyIfChanged: true });
   registerIpc();
   createBar();
   createTray();
