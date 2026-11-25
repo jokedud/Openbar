@@ -6,7 +6,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const test = require('node:test');
 const { createVolume, volumeChange } = require('../src/main/volume');
-const { volumeLayoutMigration } = require('../src/main/volume-layout');
+const { hasVolumeWidget, volumeLayoutMigration } = require('../src/main/volume-layout');
+const { normalizeCustomTabs } = require('../src/main/custom-tabs');
 
 test('volume migration preserves zone order, existing placement and later removal', () => {
   const settings = { left: ['apps'], center: ['clock'], right: ['quick', 'custom'] };
@@ -15,6 +16,17 @@ test('volume migration preserves zone order, existing placement and later remova
   assert.deepEqual(settings.right, ['quick', 'custom']);
   assert.deepEqual(volumeLayoutMigration({ ...settings, left: ['volume', 'apps'] }), { volumeWidgetMigrated: true });
   assert.equal(volumeLayoutMigration({ ...settings, ...patch, right: [] }), null);
+});
+
+test('volume polling covers a widget placed only in a custom dock tab', () => {
+  const settings = { left: ['apps'], center: [], right: ['clock'], customTabs: normalizeCustomTabs([
+    { id: 'work', name: 'Work', items: [{ id: 'link', kind: 'website', name: 'Volume', target: 'https://example.com/' }] },
+    { id: 'audio', name: 'Audio', items: [{ id: 'level', kind: 'widget', widget: 'volume' }] },
+  ]) };
+  assert.equal(hasVolumeWidget(settings), true);
+  assert.deepEqual(volumeLayoutMigration(settings), { volumeWidgetMigrated: true });
+  assert.equal(hasVolumeWidget({ ...settings, customTabs: settings.customTabs.slice(0, 1) }), false);
+  assert.equal(hasVolumeWidget({ ...settings, customTabs: [], center: ['volume'] }), true);
 });
 
 test('volume IPC accepts only finite levels and explicit mute booleans', () => {

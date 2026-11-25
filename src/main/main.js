@@ -10,7 +10,7 @@ const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
 const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
-const { volumeLayoutMigration } = require('./volume-layout');
+const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -732,7 +732,7 @@ app.whenReady().then(() => {
   const timers = [
     every(1000, pollWindows),
     every(1000, () => {
-      if (panelWidget === 'volume' || [S().left, S().center, S().right].some((zone) => zone.includes('volume'))) refreshVolume();
+      if (panelWidget === 'volume' || hasVolumeWidget(S())) refreshVolume();
     }),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
     every(3000, applyTaskbar),
