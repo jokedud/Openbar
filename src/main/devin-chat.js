@@ -137,12 +137,12 @@ class DevinChat {
     this.publish();
     try {
       if (!this.acp || this.acp.closed) {
+        this.disconnect();
         const agent = await this.agent(this.cwd);
         if (this.busy !== turn) return;
         if (agent.error) { this.messages.splice(-2); this.error = agent.error; return; }
         const desktop = await createDesktopServer((...args) => this.desktopAction(desktop, ...args));
         if (this.busy !== turn) { desktop.close(); return; }
-        this.desktop?.close();
         this.desktop = desktop;
         const acp = new AcpClient(agent.spawn(), ({ sessionId, update } = {}) => {
           if (this.acp !== acp || !this.busy || sessionId !== this.sessionId || update?.sessionUpdate !== 'agent_message_chunk' ||
