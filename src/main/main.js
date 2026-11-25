@@ -594,7 +594,7 @@ app.whenReady().then(() => {
     ] });
     settingsStore.save(true);
   }
-  if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
+  if (isWin && app.isPackaged && S().launchAtLogin && win32.shouldRestoreLoginItem(APP_ID)) syncLoginItem();
   registerIpc();
   createBar();
   createTray();
