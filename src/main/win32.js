@@ -6,6 +6,7 @@ const user32 = koffi.load('user32.dll');
 const kernel32 = koffi.load('kernel32.dll');
 const shell32 = koffi.load('shell32.dll');
 const dwmapi = koffi.load('dwmapi.dll');
+const gdi32 = koffi.load('gdi32.dll');
 
 const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
 const APPBARDATA = koffi.struct('APPBARDATA', {
@@ -45,6 +46,13 @@ const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProces
 
 const SHAppBarMessage = shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32_t msg, _Inout_ APPBARDATA *data)');
 const DwmGetWindowAttribute = dwmapi.func('long __stdcall DwmGetWindowAttribute(intptr_t hWnd, uint32_t attr, _Out_ uint32_t *val, uint32_t size)');
+
+// Native glass: an accent blur behind the window, clipped to a rounded region.
+const ACCENT_POLICY = koffi.struct('ACCENT_POLICY', { state: 'int', flags: 'int', color: 'uint32', animation: 'int' });
+const WINCOMPATTRDATA = koffi.struct('WINCOMPATTRDATA', { attribute: 'int', data: 'void *', size: 'size_t' });
+const SetWindowCompositionAttribute = user32.func('bool __stdcall SetWindowCompositionAttribute(intptr_t hWnd, WINCOMPATTRDATA *data)');
+const SetWindowRgn = user32.func('int __stdcall SetWindowRgn(intptr_t hWnd, intptr_t rgn, bool redraw)');
+const CreateRoundRectRgn = gdi32.func('intptr_t __stdcall CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h)');
 
 const GWL_EXSTYLE = -20;
 const WS_EX_TOOLWINDOW = 0x80;
@@ -212,9 +220,29 @@ function hwndFromBuffer(buf) {
   return buf.length >= 8 ? Number(buf.readBigUInt64LE(0)) : buf.readUInt32LE(0);
 }
 
+
+const ACCENT_ENABLE_BLURBEHIND = 3;
+const WCA_ACCENT_POLICY = 19;
+let accentBuf = null;
+// Blurs whatever is behind hWnd ('blur') or removes the blur ('off'); returns the mode Windows accepted.
+// Plain blur rather than acrylic: it follows the window region, so rounded windows get no square corners.
+// The tint stays in CSS, so the accent colour is near-transparent.
+function setBackdrop(hWnd, mode) {
+  const state = mode === 'off' ? 0 : ACCENT_ENABLE_BLURBEHIND;
+  accentBuf = accentBuf || koffi.alloc(ACCENT_POLICY, 1);
+  koffi.encode(accentBuf, ACCENT_POLICY, { state, flags: 0, color: 0x01000000, animation: 0 });
+  const ok = SetWindowCompositionAttribute(hWnd, { attribute: WCA_ACCENT_POLICY, data: accentBuf, size: koffi.sizeof(ACCENT_POLICY) });
+  return ok && state ? 'blur' : 'off';
+}
+// Clips the window (and so its blur) to a rounded rectangle, in physical pixels; null removes the clip.
+function setRoundRegion(hWnd, r) {
+  const rgn = r ? CreateRoundRectRgn(r.x, r.y, r.x + r.width + 1, r.y + r.height + 1, 2 * r.radius, 2 * r.radius) : 0;
+  SetWindowRgn(hWnd, rgn, true);
+}
+
 module.exports = {
   listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, taskbarVisible, ABS_AUTOHIDE,
-  appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer,
+  appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
 };

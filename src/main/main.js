@@ -1,6 +1,6 @@
 'use strict';
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
 const sources = require('./sources');
 const calendar = require('./calendar');
@@ -14,7 +14,7 @@ app.setAppUserModelId('xyz.openbar.app');
 
 let settingsStore, dataStore;
 let bar = null, panel = null, settingsWin = null, tray = null;
-let barHwnd = 0;
+let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
@@ -66,7 +66,48 @@ function layoutBar() {
   // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
   if (reserved && reserved.height > 0) b.y = reserved.y;
   bar.setBounds(b);
+  clipGlass(bar, barHwnd, S().margin, barRadius(S().height), b);
   bar.setAlwaysOnTop(true, 'screen-saver');
+}
+
+// ---------------- glass ----------------
+// Same ratios as --bar-r / --panel-r in theme.css and common.js, so the blur region matches the CSS shape.
+const barRadius = (height) => Math.round(height * 0.3);
+const PANEL_RADIUS = 18;
+let glassMode = 'off';
+function transparencyEnabled() {
+  try {
+    const key = require('path').win32.join('HKCU', 'Software', 'Microsoft', 'Windows', 'CurrentVersion', 'Themes', 'Personalize');
+    const out = require('child_process').execFileSync('reg', ['query', key, '/v', 'EnableTransparency'], { encoding: 'utf8', windowsHide: true });
+    return !/REG_DWORD\s+0x0\b/.test(out);
+  } catch { return true; }
+}
+function setBackdrop(hwnd, mode) {
+  try { return win32.setBackdrop(hwnd, mode); } catch (e) { console.error('backdrop', e); return 'off'; }
+}
+// The bar decides whether glass is on; panels follow it so both windows always share one tint.
+function enableGlass(hwnd) {
+  if (!isWin || !hwnd) return;
+  glassMode = setBackdrop(hwnd, transparencyEnabled() ? 'blur' : 'off');
+  state.glass = glassMode;
+  broadcast('state', { glass: glassMode });
+}
+// Windows broadcasts a theme change when "Transparency effects" is toggled.
+function refreshGlass() {
+  enableGlass(barHwnd);
+  if (panel && !panel.isDestroyed() && panelHwnd) setBackdrop(panelHwnd, glassMode);
+  layoutBar();
+}
+// Windows applies a resize lazily, so callers pass the size they just set instead of reading it back.
+function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
+  if (!isWin || !hwnd) return;
+  const { width, height } = size;
+  const k = screen.getDisplayMatching(win.getBounds()).scaleFactor;
+  const px = (v) => Math.round(v * k);
+  // Opaque windows drop the clip so a resized window is never cut to an old shape.
+  const region = glassMode === 'off' ? null
+    : { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) + 1 };
+  try { win32.setRoundRegion(hwnd, region); } catch (e) { console.error('region', e); }
 }
 
 // ---------------- Windows taskbar ----------------
@@ -320,18 +361,20 @@ function createBar() {
   });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
+  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); nativeTheme.on('updated', refreshGlass); }
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 480], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 420], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; return; }
-  const [w, h] = PANEL_SIZES[widget] || [360, 420];
+  const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
   const bb = bar.getBounds();
   const d = screen.getDisplayMatching(bb).workArea;
   const db = screen.getDisplayMatching(bb).bounds;
+  const room = S().position === 'top' ? db.y + db.height - (bb.y + bb.height) : bb.y - db.y;
+  const h = Math.min(preferredH, room - 14);
   let x = Math.round(bb.x + (anchorX || bb.width / 2) - w / 2);
   x = Math.max(db.x + 8, Math.min(x, db.x + db.width - w - 8));
   const gap = 6;
@@ -345,9 +388,13 @@ function togglePanel(widget, anchorX) {
     panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
+    panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
+    if (panelHwnd) setBackdrop(panelHwnd, glassMode);
+    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
     panel.setBounds({ x, y, width: w, height: h });
+    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
     panel.webContents.send('panel:widget', widget);
     panel.show(); panel.focus();
   }

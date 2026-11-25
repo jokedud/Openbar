@@ -63,15 +63,18 @@ W.apps = () => {
 
 W.clock = () => {
   const now = new Date();
-  return panelBtn('clock', '', h('div', { class: 'stack', style: { alignItems: 'flex-end' } },
-    h('span', { class: 'val' }, fmt.time(now)), h('span', { class: 'sub' }, fmt.date(now))));
+  return panelBtn('clock', 'clock', h('div', { class: 'stack' },
+    h('span', { class: 'kicker' }, now.toLocaleDateString([], { weekday: 'long' })), h('span', {}, now.toLocaleDateString([], { month: 'short', day: 'numeric' }))),
+    h('span', { class: 'val time' }, fmt.time(now)));
 };
 W.nextEvent = () => {
   const ev = nextEvents(5).find((e) => !e.allDay);
   if (!ev) return panelBtn('calendar', '', icon('calendar', 16), (OB.settings.calendars || []).length ? h('span', { class: 'sub' }, 'No more events') : null);
   const live = ev.start <= Date.now();
   const soon = !live && ev.start - Date.now() < 15 * 60000;
-  return panelBtn('calendar', `event ${soon || live ? 'soon' : ''}`, icon(ev.url ? 'video' : 'calendar', 16),
+  const day = new Date(ev.start);
+  return panelBtn('calendar', `event ${soon || live ? 'soon' : ''}`,
+    h('span', { class: 'datechip' }, h('i', {}, day.toLocaleDateString([], { month: 'short' })), h('b', {}, day.getDate())),
     h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '170px' } }, ev.title),
       h('span', { class: 'sub' }, live ? `now · ends ${fmt.time(ev.end)}` : `${fmt.rel(ev.start)} · ${fmt.time(ev.start)}`)));
 };
@@ -79,16 +82,15 @@ W.weather = () => {
   const w = OB.state.weather;
   if (!w || !w.current) return panelBtn('weather', '', icon('cloud', 16), OB.state.errors && OB.state.errors.weather ? h('span', { class: 'sub' }, 'Weather') : null);
   const [ic] = weatherInfo(w.current.weather_code);
-  return panelBtn('weather', '', icon(ic, 16), h('span', { class: 'val' }, `${Math.round(w.current.temperature_2m)}°`));
+  return panelBtn('weather', 'weather', icon(ic, 16), h('span', { class: 'val' }, `${Math.round(w.current.temperature_2m)}°`));
 };
 W.system = () => {
   const s = OB.state.system;
   if (!s) return panelBtn('system', '', icon('cpu', 16));
   const mem = Math.round((100 * s.memUsed) / s.memTotal);
-  const meter = (v) => h('span', { class: 'meter' }, h('i', { style: { width: v + '%', background: v > 85 ? 'var(--bad)' : v > 65 ? 'var(--warn)' : 'var(--accent)' } }));
-  return panelBtn('system', '', h('div', { class: 'stack', style: { gap: '3px' } },
-    h('span', { class: 'row', style: { gap: '5px', fontSize: '10px' } }, 'CPU', meter(s.cpu)),
-    h('span', { class: 'row', style: { gap: '5px', fontSize: '10px' } }, 'RAM', meter(mem))));
+  const meter = (v) => h('span', { class: 'meter' }, h('i', { style: { width: v + '%', background: v > 85 ? 'var(--bad)' : v > 65 ? 'var(--warn)' : 'var(--good)' } }));
+  const line = (label, v) => h('span', { class: 'row', style: { gap: '8px', justifyContent: 'space-between' } }, label, meter(v), h('span', { class: 'val', style: { minWidth: '24px', textAlign: 'right' } }, Math.round(v) + '%'));
+  return panelBtn('system', '', h('div', { class: 'stack meters', style: { gap: '5px' } }, line('CPU', s.cpu), line('RAM', mem)));
 };
 W.network = () => {
   const n = OB.state.net;
@@ -105,7 +107,7 @@ W.battery = () => {
 W.media = () => {
   const m = OB.state.media;
   if (!m || !m.title) return null;
-  return h('div', { class: 'row', style: { gap: '0' } },
+  return h('div', { class: 'w-group' },
     panelBtn('media', '', m.art ? h('img', { class: 'art', src: m.art }) : icon('music', 16),
       h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '150px' } }, m.title), h('span', { class: 'sub ellipsis', style: { maxWidth: '150px' } }, m.artist || ''))),
     h('button', { class: 'w', 'data-media': 'playpause', title: m.playing ? 'Pause' : 'Play' }, icon(m.playing ? 'pause' : 'play', 14)),

@@ -275,18 +275,26 @@ P.quick = (body) => {
 };
 
 // ---------- router ----------
+function animateIn() {
+  const el = $('panel');
+  el.classList.remove('enter');
+  void el.offsetWidth;
+  el.classList.add('enter');
+}
 async function draw(force) {
   if (!force && stable.has(widget)) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
   const fn = P[widget];
   if (fn) await fn(body); else setHead(widget);
+  const scrolled = force === 'switch' ? [] : [...$('body').querySelectorAll('.hours')].map((el) => el.scrollLeft);
   $('body').replaceChildren(...body.childNodes);
+  $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
-  draw(true);
+  draw(true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
-  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch'); });
+  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
