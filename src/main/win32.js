@@ -11,8 +11,16 @@ const gdi32 = koffi.load('gdi32.dll');
 const advapi32 = koffi.load('advapi32.dll');
 
 const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
-const SIZE = koffi.struct('SIZE', { cx: 'long', cy: 'long' });
 const POINT = koffi.struct('POINT', { x: 'long', y: 'long' });
+const SIZE = koffi.struct('SIZE', { cx: 'long', cy: 'long' });
+const WINDOWPLACEMENT = koffi.struct('WINDOWPLACEMENT', {
+  length: 'uint32',
+  flags: 'uint32',
+  showCmd: 'uint32',
+  ptMinPosition: POINT,
+  ptMaxPosition: POINT,
+  rcNormalPosition: RECT,
+});
 const DWM_THUMBNAIL_PROPERTIES = koffi.struct('DWM_THUMBNAIL_PROPERTIES', {
   dwFlags: 'uint32',
   rcDestination: RECT,
@@ -45,7 +53,12 @@ const GetAncestor = user32.func('intptr_t __stdcall GetAncestor(intptr_t hWnd, u
 const GetWindowThreadProcessId = user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hWnd, _Out_ uint32_t *pid)');
 const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow()');
 const GetWindowRect = user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)');
+const GetWindowPlacement = user32.func('bool __stdcall GetWindowPlacement(intptr_t hWnd, _Inout_ WINDOWPLACEMENT *lpwndpl)');
 const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(intptr_t hWnd)');
+const BringWindowToTop = user32.func('bool __stdcall BringWindowToTop(intptr_t hWnd)');
+const AttachThreadInput = user32.func('bool __stdcall AttachThreadInput(uint32_t idAttach, uint32_t idAttachTo, bool fAttach)');
+const SwitchToThisWindow = user32.func('void __stdcall SwitchToThisWindow(intptr_t hWnd, bool fAltTab)');
+const IsHungAppWindow = user32.func('bool __stdcall IsHungAppWindow(intptr_t hWnd)');
 const ShowWindow = user32.func('bool __stdcall ShowWindow(intptr_t hWnd, int cmd)');
 const ShowWindowAsync = user32.func('bool __stdcall ShowWindowAsync(intptr_t hWnd, int cmd)');
 const FindWindowW = user32.func('intptr_t __stdcall FindWindowW(const char16_t *cls, const char16_t *name)');
@@ -60,6 +73,7 @@ const AllowSetForegroundWindow = user32.func('bool __stdcall AllowSetForegroundW
 
 const OpenProcess = kernel32.func('intptr_t __stdcall OpenProcess(uint32_t access, bool inherit, uint32_t pid)');
 const CloseHandle = kernel32.func('bool __stdcall CloseHandle(intptr_t h)');
+const GetCurrentThreadId = kernel32.func('uint32_t __stdcall GetCurrentThreadId()');
 const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProcessImageNameW(intptr_t h, uint32_t flags, _Out_ uint8_t *buf, _Inout_ uint32_t *size)');
 
 const SHAppBarMessage = shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32_t msg, _Inout_ APPBARDATA *data)');
@@ -173,7 +187,33 @@ function focusWindow(hwnd, { restore = true } = {}) {
   // Synthesising an ALT tap lifts the foreground lock when we are not the active process.
   keybd_event(0x12, 0, 0, 0);
   keybd_event(0x12, 0, 2, 0);
-  return SetForegroundWindow(hwnd);
+  if (SetForegroundWindow(hwnd)) return true;
+  // On Windows 11 (e.g. 24H2) from a non-activating window, attach to non-hung foreground/target
+  // thread input queues to acquire activation rights, then fall back to SwitchToThisWindow.
+  let focused = false;
+  const isHung = (h) => !!(h && typeof IsHungAppWindow === 'function' && IsHungAppWindow(h));
+  if (!isHung(hwnd) && typeof AttachThreadInput === 'function' && typeof GetCurrentThreadId === 'function' &&
+      typeof GetWindowThreadProcessId === 'function' && typeof GetForegroundWindow === 'function') {
+    const curTid = GetCurrentThreadId();
+    const fgHwnd = Number(GetForegroundWindow());
+    const fgTid = fgHwnd && !isHung(fgHwnd) ? GetWindowThreadProcessId(fgHwnd, [0]) : 0;
+    const targetTid = GetWindowThreadProcessId(hwnd, [0]);
+    const attachedFg = !!(fgTid && fgTid !== curTid && AttachThreadInput(curTid, fgTid, true));
+    const attachedTarget = !!(targetTid && targetTid !== curTid && targetTid !== fgTid && AttachThreadInput(curTid, targetTid, true));
+    try {
+      if (typeof BringWindowToTop === 'function') BringWindowToTop(hwnd);
+      if (restore && IsIconic(hwnd) && typeof ShowWindowAsync === 'function') ShowWindowAsync(hwnd, SW_RESTORE);
+      focused = !!SetForegroundWindow(hwnd);
+    } finally {
+      if (attachedTarget) AttachThreadInput(curTid, targetTid, false);
+      if (attachedFg) AttachThreadInput(curTid, fgTid, false);
+    }
+  }
+  if (!focused && typeof SwitchToThisWindow === 'function') {
+    SwitchToThisWindow(hwnd, !!restore);
+    focused = typeof GetForegroundWindow === 'function' ? Number(GetForegroundWindow()) === hwnd : true;
+  }
+  return focused;
 }
 
 function minimizeWindow(hwnd) { return ShowWindowAsync(hwnd, SW_MINIMIZE); }
@@ -212,6 +252,32 @@ function updateThumbnail(thumbId, { left, top, right, bottom, opacity = 255, vis
     fSourceClientAreaOnly: clientAreaOnly ? 1 : 0,
   };
   return DwmUpdateThumbnailProperties(thumbId, props) === 0;
+}
+
+const WPF_RESTORETOMAXIMIZED = 0x2;
+function windowBoundsForPeek(hwnd) {
+  if (!hwnd || !IsWindow(hwnd)) return null;
+  const minimized = !!IsIconic(hwnd);
+  if (!minimized) {
+    const rect = {};
+    if (!GetWindowRect(hwnd, rect)) return null;
+    if (rect.right <= rect.left || rect.bottom <= rect.top) return null;
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, minimized: false, restoreToMaximized: false };
+  }
+  if (typeof GetWindowPlacement !== 'function') return null;
+  const wp = {
+    length: koffi.sizeof(WINDOWPLACEMENT),
+    flags: 0, showCmd: 0,
+    ptMinPosition: { x: 0, y: 0 }, ptMaxPosition: { x: 0, y: 0 },
+    rcNormalPosition: { left: 0, top: 0, right: 0, bottom: 0 },
+  };
+  if (!GetWindowPlacement(hwnd, wp)) return null;
+  const r = wp.rcNormalPosition;
+  return {
+    left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+    minimized: true,
+    restoreToMaximized: !!(wp.flags & WPF_RESTORETOMAXIMIZED),
+  };
 }
 function foregroundWindow() { return Number(GetForegroundWindow()); }
 function foregroundWindowBounds(excludePid) {
@@ -374,7 +440,7 @@ function setRoundRegion(hWnd, { width, height, radius }) {
 
 module.exports = {
   listTaskbarWindows, focusWindow, minimizeWindow, maximizeWindow, restoreWindow, isWindowMaximized, closeWindow,
-  registerThumbnail, unregisterThumbnail, queryThumbnailSourceSize, updateThumbnail,
+  registerThumbnail, unregisterThumbnail, queryThumbnailSourceSize, updateThumbnail, windowBoundsForPeek,
   foregroundWindow, foregroundWindowBounds, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   windowText, moveDesktopMouse, clickDesktopMouse, scrollDesktopMouse, typeDesktopText, pressDesktopKey, activateDesktopInputTarget,
