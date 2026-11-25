@@ -10,7 +10,7 @@ A free, open-source smart dock and taskbar replacement for Windows 10/11, with l
 
 Get the latest build from the [Releases](https://github.com/jokedud/openbar/releases) page or the artifacts of the latest [build workflow](https://github.com/jokedud/openbar/actions/workflows/build.yml) run:
 
-- `OpenBar-x.y.z-portable-x64.exe`: run it directly, no install needed.
+- `OpenBar-x.y.z-portable-x64.exe`: run it directly, no install needed. A startup screen appears while it extracts the app. The original v0.1.0 release extracts silently, so give it time to open even if nothing appears at first.
 - `OpenBar-x.y.z-setup-x64.exe`: installer with Start Menu entry and uninstaller.
 
 The builds are not code-signed yet, so Windows SmartScreen may warn you. Click **More info → Run anyway**.

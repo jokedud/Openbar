@@ -11,7 +11,7 @@ const advapi32 = koffi.load('advapi32.dll');
 
 const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
 const SIZE = koffi.struct('SIZE', { cx: 'long', cy: 'long' });
-const DWM_THUMBNAIL_PROPERTIES = (koffi.pack || koffi.struct)('DWM_THUMBNAIL_PROPERTIES', {
+const DWM_THUMBNAIL_PROPERTIES = koffi.struct('DWM_THUMBNAIL_PROPERTIES', {
   dwFlags: 'uint32',
   rcDestination: RECT,
   rcSource: RECT,
