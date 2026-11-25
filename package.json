@@ -28,7 +28,10 @@
     "files": ["src/**/*", "package.json", "!**/*.map"],
     "asarUnpack": ["node_modules/koffi/**",
       "src/main/helper.ps1"],
-    "win": { "icon": "src/renderer/assets/icon.png" },
+    "win": {
+      "icon": "src/renderer/assets/icon.png",
+      "files": ["!node_modules/koffi/build/koffi/!(win32_${arch}){,/**}"]
+    },
     "portable": { "artifactName": "OpenBar-${version}-portable-${arch}.exe", "useZip": true },
     "nsis": { "artifactName": "OpenBar-${version}-setup-${arch}.exe", "oneClick": false, "allowToChangeInstallationDirectory": true }
   }

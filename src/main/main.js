@@ -1,21 +1,27 @@
 'use strict';
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, powerMonitor } = require('electron');
+const { stat } = require('fs/promises');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor, safeStorage } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
+const { shortcutTarget } = require('./custom-tabs');
+const TaskbarRecovery = require('./taskbar-recovery');
 const sources = require('./sources');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
+const devin = require('./devin');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
+const APP_ID = 'xyz.openbar.app';
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
-app.setAppUserModelId('xyz.openbar.app');
+app.setAppUserModelId(APP_ID);
 
-let settingsStore, dataStore;
+let settingsStore, dataStore, devinStore, taskbarRecovery;
 let bar = null, panel = null, settingsWin = null, tray = null;
-let barHwnd = 0;
+let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
+let devinPanelSize = null;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
@@ -66,34 +72,100 @@ function layoutBar() {
   // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
   if (reserved && reserved.height > 0) b.y = reserved.y;
   bar.setBounds(b);
+  clipGlass(bar, barHwnd, S().margin, barRadius(S().height), b);
   bar.setAlwaysOnTop(true, 'screen-saver');
+}
+
+// ---------------- glass ----------------
+// Same ratios as --bar-r / --panel-r in theme.css and common.js, so the blur region matches the CSS shape.
+const barRadius = (height) => Math.round(height * 0.3);
+const PANEL_RADIUS = 18;
+let glassMode = 'off';
+function transparencyEnabled() {
+  try {
+    const key = require('path').win32.join('HKCU', 'Software', 'Microsoft', 'Windows', 'CurrentVersion', 'Themes', 'Personalize');
+    const out = require('child_process').execFileSync('reg', ['query', key, '/v', 'EnableTransparency'], { encoding: 'utf8', windowsHide: true });
+    return !/REG_DWORD\s+0x0\b/.test(out);
+  } catch { return true; }
+}
+function setBackdrop(hwnd, mode) {
+  try { return win32.setBackdrop(hwnd, mode); } catch (e) { console.error('backdrop', e); return 'off'; }
+}
+// The bar decides whether glass is on; panels follow it so both windows always share one tint.
+function enableGlass(hwnd) {
+  if (!isWin || !hwnd) return;
+  glassMode = setBackdrop(hwnd, transparencyEnabled() ? 'blur' : 'off');
+  state.glass = glassMode;
+  broadcast('state', { glass: glassMode });
+}
+// Windows broadcasts a theme change when "Transparency effects" is toggled.
+function refreshGlass() {
+  enableGlass(barHwnd);
+  if (panel && !panel.isDestroyed() && panelHwnd) setBackdrop(panelHwnd, glassMode);
+  layoutBar();
+}
+// Windows applies a resize lazily, so callers pass the size they just set instead of reading it back.
+function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
+  if (!isWin || !hwnd) return;
+  const { width, height } = size;
+  const k = screen.getDisplayMatching(win.getBounds()).scaleFactor;
+  const px = (v) => Math.round(v * k);
+  // Opaque windows drop the clip so a resized window is never cut to an old shape.
+  const region = glassMode === 'off' ? null
+    : { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) + 1 };
+  try { win32.setRoundRegion(hwnd, region); } catch (e) { console.error('region', e); }
 }
 
 // ---------------- Windows taskbar ----------------
 function applyTaskbar() {
   if (!isWin) return;
+  const pending = taskbarRecovery.pending();
+  if (pending && pending.id !== taskbarRecovery.id) {
+    taskbarRecovery.resume(pending);
+    return;
+  }
   const mode = S().taskbar;
-  const data = D();
   if (mode === 'keep') { restoreTaskbar(); return; }
-  if (!data.taskbarRestore) {
-    dataStore.set({ taskbarRestore: { autohide: (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0 } });
+  if (!win32.hasTaskbar()) return;
+  const visible = mode !== 'hide';
+  const original = D().taskbarRestore;
+  const autohide = (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0;
+  const alreadySet = autohide && win32.taskbarVisibilityIs(visible);
+  const legacy = original && !original.guarded;
+  const overridden = pending && pending.phase !== 'prepared';
+  if (alreadySet && !legacy && !overridden) return;
+  const baseline = legacy ? !!original.autohide : autohide;
+  if (!taskbarRecovery.arm(baseline)) {
+    if (overridden) restoreTaskbar();
+    return;
+  }
+  if (alreadySet && pending?.phase === 'applied') return;
+  // Journal intent before touching Explorer or replacing a legacy baseline.
+  if (!taskbarRecovery.recordOverride(baseline)) return;
+  if (pending?.phase === 'prepared') {
+    dataStore.set({ taskbarRestore: { autohide: baseline, guarded: true, id: taskbarRecovery.id } });
     dataStore.save(true);
   }
-  win32.setTaskbarAutoHide(true);
-  win32.setTaskbarVisible(mode !== 'hide');
-}
-
-// Explorer restarts and some shell actions bring the taskbar back; keep it hidden.
-function enforceTaskbar() {
-  if (isWin && S().taskbar === 'hide' && win32.taskbarVisible()) win32.setTaskbarVisible(false);
+  if (!autohide) win32.setTaskbarAutoHide(true);
+  if (win32.setTaskbarVisible(visible) && (win32.getTaskbarState() & win32.ABS_AUTOHIDE)) {
+    taskbarRecovery.markApplied();
+  }
 }
 
 function restoreTaskbar() {
-  if (!isWin) return;
+  if (!isWin || !taskbarRecovery) return;
+  const pending = taskbarRecovery.pending();
+  if (pending && pending.id !== taskbarRecovery.id) return;
   const r = D().taskbarRestore;
-  win32.setTaskbarVisible(true);
+  const original = pending && pending.phase !== 'prepared' ? pending : (r && !r.guarded ? r : null);
+  if (original) {
+    if (!win32.hasTaskbar()) return;
+    win32.setTaskbarAutoHide(!!original.autohide);
+    if (!win32.setTaskbarVisible(true) || !win32.hasTaskbar() ||
+        ((win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0) !== !!original.autohide) return;
+  }
+  taskbarRecovery.restored();
   if (r) {
-    win32.setTaskbarAutoHide(!!r.autohide);
     dataStore.set({ taskbarRestore: null });
     dataStore.save(true);
   }
@@ -320,22 +392,28 @@ function createBar() {
   });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
+  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); nativeTheme.on('updated', refreshGlass); }
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 480], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 420], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const DEVIN_PANEL_RADIUS = 28;
 
 function togglePanel(widget, anchorX) {
-  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; return; }
-  const [w, h] = PANEL_SIZES[widget] || [360, 420];
+  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
+  const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
+  const radius = widget === 'devin' ? DEVIN_PANEL_RADIUS : PANEL_RADIUS;
   const bb = bar.getBounds();
   const d = screen.getDisplayMatching(bb).workArea;
   const db = screen.getDisplayMatching(bb).bounds;
+  const atTop = S().position === 'top';
+  const room = atTop ? db.y + db.height - (bb.y + bb.height) : bb.y - db.y;
+  const h = Math.min(preferredH, room - 14);
   let x = Math.round(bb.x + (anchorX || bb.width / 2) - w / 2);
   x = Math.max(db.x + 8, Math.min(x, db.x + db.width - w - 8));
-  const gap = 6;
-  const y = S().position === 'top' ? bb.y + bb.height + gap : bb.y - h - gap;
+  const gap = widget === 'devin' ? 6 - S().margin : 6;
+  const y = atTop ? bb.y + bb.height + gap : bb.y - h - gap;
+  devinPanelSize = widget === 'devin' ? { maxHeight: h, atTop } : null;
   if (!panel || panel.isDestroyed()) {
     panel = new BrowserWindow({
       x, y, width: w, height: h, frame: false, transparent: true, resizable: false, skipTaskbar: true, alwaysOnTop: true,
@@ -345,15 +423,30 @@ function togglePanel(widget, anchorX) {
     panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
+    panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
+    if (panelHwnd) setBackdrop(panelHwnd, glassMode);
+    clipGlass(panel, panelHwnd, 0, radius, { width: w, height: h });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
     panel.setBounds({ x, y, width: w, height: h });
+    clipGlass(panel, panelHwnd, 0, radius, { width: w, height: h });
     panel.webContents.send('panel:widget', widget);
     panel.show(); panel.focus();
   }
   void d;
   panelWidget = widget;
   broadcast('panel', widget);
+}
+
+function fitDevinPanel(e, contentHeight) {
+  if (panelWidget !== 'devin' || !devinPanelSize || !panel || panel.isDestroyed() ||
+      e.sender !== panel.webContents || !Number.isFinite(contentHeight) || contentHeight <= 0) return;
+  const bounds = panel.getBounds();
+  const height = Math.min(Math.ceil(contentHeight), devinPanelSize.maxHeight);
+  if (height === bounds.height) return;
+  const y = devinPanelSize.atTop ? bounds.y : bounds.y + bounds.height - height;
+  panel.setBounds({ ...bounds, y, height });
+  clipGlass(panel, panelHwnd, 0, DEVIN_PANEL_RADIUS, { width: bounds.width, height });
 }
 
 function openSettings(tab) {
@@ -384,11 +477,19 @@ function createTray() {
 }
 
 // ---------------- IPC ----------------
+function syncLoginItem() {
+  if (!app.isPackaged) return;
+  app.setLoginItemSettings({
+    openAtLogin: !!S().launchAtLogin,
+    path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath,
+  });
+}
+
 function applySettings(prev) {
   const s = S();
   layoutBar();
   if (prev.taskbar !== s.taskbar) applyTaskbar();
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!s.launchAtLogin, path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath });
+  syncLoginItem();
   if (JSON.stringify(prev.commands) !== JSON.stringify(s.commands)) scheduleCommands();
   if (JSON.stringify(prev.weather) !== JSON.stringify(s.weather)) refreshers.weather();
   if (JSON.stringify(prev.calendars) !== JSON.stringify(s.calendars)) refreshers.calendar();
@@ -425,11 +526,83 @@ function launch(item) {
   return shell.openPath(item.path);
 }
 
+function devinConfigInfo() {
+  const { encrypted, orgId } = devinStore.get();
+  return { configured: !!encrypted, orgId };
+}
+
+function saveDevinConfig(config) {
+  const previous = devinStore.get();
+  try {
+    devinStore.replace(config);
+    devinStore.save(true);
+    return devinConfigInfo();
+  } catch {
+    devinStore.value = previous;
+    return { error: 'storage' };
+  }
+}
+
+function registerDevinIpc() {
+  const storageAvailable = () => safeStorage.isEncryptionAvailable()
+    && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
+  ipcMain.handle('devin:config', devinConfigInfo);
+  ipcMain.handle('devin:save', (e, key, organization) => {
+    if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
+    if (typeof key !== 'string' || typeof organization !== 'string') return { error: 'invalid' };
+    const token = key.trim(), orgId = organization.trim();
+    const saved = devinStore.get();
+    if ((!token && !saved.encrypted) || /\s/.test(token)) return { error: 'invalid' };
+    if (!storageAvailable()) return { error: 'storage' };
+    try {
+      const activeToken = token || safeStorage.decryptString(Buffer.from(saved.encrypted, 'base64'));
+      const legacy = activeToken.startsWith('apk_');
+      if (!legacy && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
+      const encrypted = token ? safeStorage.encryptString(token).toString('base64') : saved.encrypted;
+      return saveDevinConfig({ encrypted, orgId: legacy ? '' : orgId });
+    } catch {
+      return { error: 'storage' };
+    }
+  });
+  ipcMain.handle('devin:remove', (e) => {
+    if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
+    return saveDevinConfig({});
+  });
+  ipcMain.handle('devin:list', (_e, cursor) => {
+    const { encrypted, orgId } = devinStore.get();
+    if (!encrypted) return { error: 'missing' };
+    try {
+      if (!storageAvailable()) return { error: 'storage' };
+      return devin.listSessions({ token: safeStorage.decryptString(Buffer.from(encrypted, 'base64')), orgId }, cursor);
+    } catch {
+      return { error: 'storage' };
+    }
+  });
+  ipcMain.handle('devin:open', async (_e, id) => {
+    const url = devin.sessionUrl(id);
+    if (!url) return false;
+    try {
+      await shell.openExternal(url);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function registerIpc() {
+  registerDevinIpc();
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
   ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); applySettings(prev); return S(); });
-  ipcMain.handle('settings:reset', () => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(DEFAULT_SETTINGS); applySettings(prev); return S(); });
+  ipcMain.handle('settings:reset', () => {
+    const { configured, orgId } = devinConfigInfo();
+    if ((configured || orgId) && saveDevinConfig({}).error) throw new Error('Could not remove the saved Devin key.');
+    const prev = JSON.parse(JSON.stringify(S()));
+    settingsStore.replace(DEFAULT_SETTINGS);
+    applySettings(prev);
+    return S();
+  });
   ipcMain.handle('data:set', (_e, patch) => { dataStore.set(patch); broadcast('data', D()); return D(); });
   ipcMain.handle('data:replaceKey', (_e, key, value) => { dataStore.value[key] = value; dataStore.save(); broadcast('data', D()); return D(); });
   ipcMain.handle('win:action', (_e, hwnd, action) => {
@@ -444,6 +617,25 @@ function registerIpc() {
     setTimeout(pollWindows, 120);
   });
   ipcMain.handle('launch', (_e, item) => launch(item));
+  ipcMain.handle('tabs:target', (_e, kind, value) => shortcutTarget(kind, value));
+  ipcMain.handle('tabs:browse', async (e, kind) => {
+    if (kind !== 'app' && kind !== 'folder') return null;
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), kind === 'folder'
+      ? { title: 'Choose a folder', properties: ['openDirectory'] }
+      : { title: 'Choose an app', properties: ['openFile', 'noResolveAliases'], filters: [{ name: 'Apps', extensions: ['exe', 'lnk', 'appref-ms'] }] });
+    return result.canceled ? null : result.filePaths[0];
+  });
+  ipcMain.handle('tabs:open', async (e, tabId, itemId) => {
+    const item = S().customTabs.find((t) => t.id === tabId)?.items.find((i) => i.id === itemId);
+    if (!item || item.kind === 'widget') return;
+    let detail;
+    try {
+      if (item.kind === 'website') await shell.openExternal(item.target);
+      else if (item.kind === 'folder' && !(await stat(item.target)).isDirectory()) detail = 'The target is not a folder.';
+      else detail = await shell.openPath(item.target);
+    } catch (error) { detail = error.message; }
+    if (detail) await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender), { type: 'error', message: 'Could not open this shortcut', detail });
+  });
   ipcMain.handle('apps:list', (_e, force) => startmenu.listApps(force));
   ipcMain.handle('apps:icon', (_e, file) => startmenu.iconFor(file));
   ipcMain.handle('exe:icon', (_e, file) => exeIcon(file));
@@ -451,6 +643,7 @@ function registerIpc() {
   ipcMain.handle('system', (_e, action) => { const f = SYSTEM_ACTIONS[action]; if (f) f(); });
   ipcMain.handle('open', (_e, url) => { if (SAFE_URL.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
+  ipcMain.handle('panel:fit-devin', fitDevinPanel);
   ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));
   ipcMain.handle('bar:width', (_e, w) => { if (Math.abs(w - lastContentWidth) > 2) { lastContentWidth = w; if (S().layout === 'pill') layoutBar(); } });
@@ -482,6 +675,8 @@ app.on('second-instance', () => openSettings());
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
+  devinStore = new JsonFile('devin.json', { encrypted: '', orgId: '' });
+  if (isWin) taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
   const firstRun = !require('fs').existsSync(settingsStore.file);
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
@@ -490,6 +685,7 @@ app.whenReady().then(() => {
     ] });
     settingsStore.save(true);
   }
+  if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
   registerIpc();
   createBar();
   createTray();
@@ -498,7 +694,7 @@ app.whenReady().then(() => {
   const timers = [
     every(1000, pollWindows),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
-    every(3000, enforceTaskbar),
+    every(3000, applyTaskbar),
     every(60 * 1000, refreshers.disk),
     every(15 * 60 * 1000, refreshers.weather),
     every(5 * 60 * 1000, refreshers.calendar),

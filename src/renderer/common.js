@@ -6,7 +6,7 @@ const OB = { settings: null, data: null, state: {}, listeners: new Set() };
 OB.init = async function init() {
   const r = await api.invoke('init');
   OB.settings = r.settings; OB.data = r.data; OB.state = r.state; OB.platform = r.platform; OB.version = r.version;
-  api.on('state', (patch) => { Object.assign(OB.state, patch); OB.emit('state', patch); });
+  api.on('state', (patch) => { Object.assign(OB.state, patch); if ('glass' in patch) applyTheme(); OB.emit('state', patch); });
   api.on('settings', (s) => { OB.settings = s; applyTheme(); OB.emit('settings', s); });
   api.on('data', (d) => { OB.data = d; OB.emit('data', d); });
   applyTheme();
@@ -23,7 +23,10 @@ function applyTheme() {
   document.documentElement.dataset.style = s.style || 'glass';
   document.documentElement.dataset.position = s.position || 'bottom';
   document.documentElement.dataset.layout = s.layout || 'full';
-  document.documentElement.style.setProperty('--bar-h', (s.height != null ? s.height : 46) + 'px');
+  document.documentElement.dataset.glass = OB.state.glass || 'off';
+  const height = s.height != null ? s.height : 46;
+  document.documentElement.style.setProperty('--bar-h', height + 'px');
+  document.documentElement.style.setProperty('--bar-r', Math.round(height * 0.3) + 'px');
   document.documentElement.style.setProperty('--bar-m', (s.margin != null ? s.margin : 6) + 'px');
 }
 
@@ -47,6 +50,7 @@ function icon(name, size = 16) {
   return s;
 }
 const ICONS = {
+  devin: '<rect x="4" y="7" width="16" height="13" rx="5"/><path d="M12 4v3M9 13h.01M15 13h.01"/>',
   dot: '<circle cx="12" cy="12" r="3"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   windows: '<path d="M3 5.5 10.5 4.5v7H3zM12.5 4.2 21 3v8.5h-8.5zM3 12.5h7.5v7L3 18.5zM12.5 12.5H21V21l-8.5-1.2z" fill="currentColor" stroke="none"/>',
@@ -79,6 +83,7 @@ const ICONS = {
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  folder: '<path d="M3 5h7l2 2h9v12H3z"/>',
   video: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/>',
   hourglass: '<path d="M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4"/>',
   disk: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/>',

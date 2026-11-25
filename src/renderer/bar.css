@@ -1,36 +1,72 @@
 html, body { background: transparent; overflow: hidden; height: 100%; user-select: none; }
-body { padding: var(--bar-m); }
-#bar { height: var(--bar-h); display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--bg); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc(var(--tile-h) * .275); }
+#bar { position: relative; height: var(--bar-h); display: flex; align-items: center; gap: 3px; padding: 3px; background: var(--bg);
+  border-radius: var(--bar-r); animation: rise .5s cubic-bezier(.32,.72,0,1) both;
+  box-shadow: inset 0 0 0 1px var(--bar-rim), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -10px 24px rgba(0,0,0,.28), inset 0 10px 24px rgba(255,255,255,.04); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+[data-glass="off"] #bar { box-shadow: inset 0 0 0 1px var(--bar-rim), 0 2px 12px rgba(0,0,0,.25); }
 [data-layout="pill"] body { display: flex; justify-content: center; }
 [data-layout="pill"] #bar { display: inline-flex; width: auto; max-width: 100%; overflow: hidden; }
-.zone { display: flex; align-items: center; gap: 2px; min-width: 0; height: 100%; }
+.zone { display: flex; align-items: center; gap: 3px; min-width: 0; height: 100%; }
 #left { flex: 1 1 0; justify-content: flex-start; overflow: hidden; }
 #center { flex: 0 0 auto; justify-content: center; }
 #right { flex: 1 1 0; justify-content: flex-end; }
 [data-layout="pill"] #left, [data-layout="pill"] #center, [data-layout="pill"] #right { flex: 0 0 auto; min-width: max-content; }
 [data-layout="pill"] #left:has(.apps), [data-layout="pill"] #center:has(.apps), [data-layout="pill"] #right:has(.apps) { flex: 0 1 auto; min-width: 0; overflow: hidden; }
-.w { display: flex; align-items: center; gap: 6px; height: calc(var(--bar-h) - 10px); padding: 0 8px; border-radius: calc(var(--radius) - 5px); white-space: nowrap; flex: none; }
-.w:hover, .w.open { background: var(--hover); }
-.w .val { font-variant-numeric: tabular-nums; }
-.w .sub { color: var(--muted); font-size: 11px; }
-.stack { display: flex; flex-direction: column; line-height: 1.15; }
-.apps { display: flex; align-items: center; gap: 2px; height: 100%; overflow: hidden; }
-.app { position: relative; display: flex; align-items: center; gap: 7px; height: calc(var(--bar-h) - 8px); padding: 0 7px; border-radius: calc(var(--radius) - 5px); max-width: 220px; flex: none; }
-.app:hover { background: var(--hover); }
-.app.active { background: var(--active); }
-.app img, .app .ph { width: 24px; height: 24px; flex: none; border-radius: 6px; }
-.app .ph { display: flex; align-items: center; justify-content: center; background: var(--hover); font-weight: 600; font-size: 12px; }
-.app .label { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.app .dot { position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%); height: 3px; width: 6px; border-radius: 2px; background: var(--muted); }
-.app.active .dot { width: 16px; background: var(--accent); }
-.app .count { position: absolute; top: 2px; right: 2px; font-size: 9px; background: var(--accent); color: var(--accent-fg); border-radius: 6px; padding: 0 4px; }
+
+/* Every widget and app sits on its own glass tile. */
+.w, .app, .w-group { display: flex; align-items: center; height: var(--tile-h); border-radius: var(--tile-r); background: var(--tile);
+  box-shadow: inset 0 0 0 1px var(--tile-line); white-space: nowrap; flex: none;
+  transition: background-color .2s ease-out, filter .2s ease-out, transform .45s cubic-bezier(.34,1.56,.64,1); }
+.w { gap: 8px; min-width: var(--tile-h); justify-content: center; padding: 0 10px; }
+.w:hover, .app:hover { background: var(--tile-hover); transform: translateY(-1px); }
+.w.open { background: var(--tile-on); }
+/* Apps sit bare on the glass, as in Lumabar's dock; hover still lights a tile. */
+.app { background: none; box-shadow: none; }
+.w:active, .app:active { filter: brightness(.9); transform: scale(.94); transition-duration: .1s; }
+.app img, .app .ph { transition: transform .45s cubic-bezier(.34,1.56,.64,1); } .app:hover img, .app:hover .ph { transform: scale(1.1); }
+.w .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.w .sub { color: var(--muted); font-size: 10.5px; }
+.stack { display: flex; flex-direction: column; gap: 3px; line-height: 1; text-align: left; }
+.stack > :first-child { font-weight: 600; font-size: 12.5px; }
+.stack.meters > * { font-weight: 600; font-size: 9.5px; color: var(--muted); letter-spacing: .02em; }
+.apps { display: flex; align-items: center; gap: 3px; height: 100%; overflow: hidden; }
+.app { position: relative; justify-content: center; gap: 8px; min-width: var(--tile-h); padding: 0 calc(var(--tile-h) * .2); max-width: 220px; }
+.app img, .app .ph { width: calc(var(--tile-h) * .58); height: calc(var(--tile-h) * .58); flex: none; border-radius: 22%; object-fit: contain; }
+.app .ph { display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 12px; }
+.app .label { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.app .dot { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); height: 3px; width: 3px; border-radius: 2px; background: var(--accent); opacity: .9; }
+.app.active .dot { width: 10px; }
+.app .count { position: absolute; top: 2px; right: 2px; min-width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 9px; font-weight: 700;
+  background: var(--bad); color: #fff; border-radius: 7px; padding: 0 3px; }
 .app.dragging { opacity: .4; }
-.sep { width: 1px; height: 50%; background: var(--line); margin: 0 4px; flex: none; }
-.meter { width: 30px; height: 5px; border-radius: 3px; background: var(--hover); overflow: hidden; }
-.meter > i { display: block; height: 100%; background: var(--accent); }
-.art { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; }
+.sep { width: 3px; flex: none; }
+.meter { width: 44px; height: 4px; border-radius: 2px; background: var(--hover); overflow: hidden; }
+.meter > i { display: block; height: 100%; border-radius: 2px; background: var(--good); }
+.art { width: calc(var(--tile-h) - 12px); height: calc(var(--tile-h) - 12px); border-radius: 8px; object-fit: cover; }
 .pomo.focus { color: var(--bad); } .pomo.break { color: var(--good); }
-.event.soon { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-.badge { font-size: 10px; background: var(--accent); color: var(--accent-fg); border-radius: 8px; padding: 1px 6px; }
+.badge { min-width: 16px; height: 16px; line-height: 16px; text-align: center; font-size: 10px; font-weight: 700; background: var(--bad); color: #fff; border-radius: 8px; padding: 0 5px; }
+
+/* Clock: red weekday over the date, then the time. */
+.clock { gap: 12px; padding: 0 12px; }
+.clock .kicker { color: #ff6961; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.clock .stack > :last-child { font-weight: 700; font-size: 13px; }
+.clock .time { font-size: 15px; font-weight: 700; }
+/* Next meeting: a calendar chip and an accent rule beside the title. */
+.event { gap: 10px; padding-left: 6px; }
+.datechip { display: flex; flex-direction: column; align-items: center; justify-content: center; width: calc(var(--tile-h) - 10px); height: calc(var(--tile-h) - 10px);
+  border-radius: 9px; background: var(--hover); line-height: 1; gap: 2px; }
+.datechip i { font-style: normal; font-size: 7.5px; font-weight: 700; color: var(--today); text-transform: uppercase; letter-spacing: .04em; }
+.datechip b { font-size: 14px; font-weight: 600; }
+.event .stack > :first-child { border-left: 2px solid #ff9f0a; padding-left: 6px; }
+.event .stack > :last-child { padding-left: 8px; }
+.event.soon { background: color-mix(in srgb, var(--accent) 26%, var(--tile)); }
+/* Weather is a little sky. */
+.w.weather { background: linear-gradient(180deg, #5cb4ff, #1f77e6); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.22), inset 0 1px 0 rgba(255,255,255,.35); }
+.w.weather:hover, .w.weather.open { filter: brightness(1.08); }
+/* Now playing: one tile holding the track and round transport buttons. */
+.w-group { gap: 4px; padding-right: 8px; }
+.w-group > .w { background: none; box-shadow: none; }
+.w-group > .w[data-media] { min-width: 0; width: 26px; height: 26px; padding: 0; border-radius: 50%; background: var(--hover); }
+.w-group > .w[data-media="playpause"] { background: var(--accent); color: var(--accent-fg); }
 [data-layout="pill"] .apps { min-width: 0; overflow: hidden; }

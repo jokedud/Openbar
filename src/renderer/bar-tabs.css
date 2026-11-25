@@ -1,0 +1,7 @@
+#dock-tabs { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: 320px; overflow-x: auto; scrollbar-width: none; }
+#dock-tabs .w, .dock-shortcut { max-width: 140px; }
+#dock-tabs [aria-pressed="true"] { background: var(--active); }
+#bar[data-custom-tab] #left, [data-layout="full"] #bar:has(#dock-tabs) #left { overflow-x: auto; scrollbar-width: none; }
+#bar[data-custom-tab] #left > .apps, [data-layout="full"] #bar:has(#dock-tabs) #left > .apps { flex: none; }
+[data-layout="pill"] #bar[data-custom-tab] { flex: none; width: max-content; max-width: calc(var(--dock-screen-width) - 2 * var(--bar-m)); }
+[data-layout="pill"] #bar[data-custom-tab] #left { flex: 0 1 auto; min-width: 0; }
