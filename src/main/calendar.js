@@ -1,6 +1,8 @@
 'use strict';
 const ical = require('node-ical');
 
+const MAX_OCCURRENCES = 500;
+
 // Fetches iCal feeds (Google / Outlook / iCloud secret links) and expands events for the next 30 days.
 async function fetchCalendar(cal) {
   const url = cal.url.replace(/^webcal:\/\//i, 'https://');
@@ -21,7 +23,7 @@ async function fetchCalendar(cal) {
     });
     if (ev.rrule) {
       const excluded = new Set(Object.values(ev.exdate || {}).map((d) => +d));
-      for (const d of ev.rrule.between(from, to, true)) {
+      for (const d of ev.rrule.between(from, to, true, (_d, i) => i < MAX_OCCURRENCES)) {
         if (!excluded.has(+d)) push(d);
       }
     } else if (+ev.start <= +to && +ev.start + dur >= +from) {
