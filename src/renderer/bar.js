@@ -48,11 +48,9 @@ W.apps = () => {
   });
   const rest = wins.filter((w) => !used.has((w.path || w.exe || '').toLowerCase()));
   if (s.pinned.length && rest.length) box.append(h('span', { class: 'sep' }));
-  const groups = [];
-  if (s.groupWindows) {
-    const seen = new Map();
-    for (const w of rest) { const k = (w.path || w.exe).toLowerCase(); if (!seen.has(k)) { seen.set(k, []); groups.push(seen.get(k)); } seen.get(k).push(w); }
-  } else rest.forEach((w) => groups.push([w]));
+  const groups = s.groupWindows
+    ? st.windowAppOrder.filter((key) => !used.has(key)).map((key) => byPath.get(key))
+    : rest.map((w) => [w]);
   for (const g of groups) {
     const w = g.find((x) => x.hwnd === st.activeHwnd) || g[0];
     const active = g.some((x) => x.hwnd === st.activeHwnd);
@@ -65,15 +63,18 @@ W.apps = () => {
 
 W.clock = () => {
   const now = new Date();
-  return panelBtn('clock', '', h('div', { class: 'stack', style: { alignItems: 'flex-end' } },
-    h('span', { class: 'val' }, fmt.time(now)), h('span', { class: 'sub' }, fmt.date(now))));
+  return panelBtn('clock', 'clock', h('div', { class: 'stack' },
+    h('span', { class: 'kicker' }, now.toLocaleDateString([], { weekday: 'long' })), h('span', {}, now.toLocaleDateString([], { month: 'short', day: 'numeric' }))),
+    h('span', { class: 'val time' }, fmt.time(now)));
 };
 W.nextEvent = () => {
   const ev = nextEvents(5).find((e) => !e.allDay);
   if (!ev) return panelBtn('calendar', '', icon('calendar', 16), (OB.settings.calendars || []).length ? h('span', { class: 'sub' }, 'No more events') : null);
   const live = ev.start <= Date.now();
   const soon = !live && ev.start - Date.now() < 15 * 60000;
-  return panelBtn('calendar', `event ${soon || live ? 'soon' : ''}`, icon(ev.url ? 'video' : 'calendar', 16),
+  const day = new Date(ev.start);
+  return panelBtn('calendar', `event ${soon || live ? 'soon' : ''}`,
+    h('span', { class: 'datechip' }, h('i', {}, day.toLocaleDateString([], { month: 'short' })), h('b', {}, day.getDate())),
     h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '170px' } }, ev.title),
       h('span', { class: 'sub' }, live ? `now · ends ${fmt.time(ev.end)}` : `${fmt.rel(ev.start)} · ${fmt.time(ev.start)}`)));
 };
@@ -81,16 +82,15 @@ W.weather = () => {
   const w = OB.state.weather;
   if (!w || !w.current) return panelBtn('weather', '', icon('cloud', 16), OB.state.errors && OB.state.errors.weather ? h('span', { class: 'sub' }, 'Weather') : null);
   const [ic] = weatherInfo(w.current.weather_code);
-  return panelBtn('weather', '', icon(ic, 16), h('span', { class: 'val' }, `${Math.round(w.current.temperature_2m)}°`));
+  return panelBtn('weather', 'weather', icon(ic, 16), h('span', { class: 'val' }, `${Math.round(w.current.temperature_2m)}°`));
 };
 W.system = () => {
   const s = OB.state.system;
   if (!s) return panelBtn('system', '', icon('cpu', 16));
   const mem = Math.round((100 * s.memUsed) / s.memTotal);
-  const meter = (v) => h('span', { class: 'meter' }, h('i', { style: { width: v + '%', background: v > 85 ? 'var(--bad)' : v > 65 ? 'var(--warn)' : 'var(--accent)' } }));
-  return panelBtn('system', '', h('div', { class: 'stack', style: { gap: '3px' } },
-    h('span', { class: 'row', style: { gap: '5px', fontSize: '10px' } }, 'CPU', meter(s.cpu)),
-    h('span', { class: 'row', style: { gap: '5px', fontSize: '10px' } }, 'RAM', meter(mem))));
+  const meter = (v) => h('span', { class: 'meter' }, h('i', { style: { width: v + '%', background: v > 85 ? 'var(--bad)' : v > 65 ? 'var(--warn)' : 'var(--good)' } }));
+  const line = (label, v) => h('span', { class: 'row', style: { gap: '8px', justifyContent: 'space-between' } }, label, meter(v), h('span', { class: 'val', style: { minWidth: '24px', textAlign: 'right' } }, Math.round(v) + '%'));
+  return panelBtn('system', '', h('div', { class: 'stack meters', style: { gap: '5px' } }, line('CPU', s.cpu), line('RAM', mem)));
 };
 W.network = () => {
   const n = OB.state.net;
@@ -107,7 +107,7 @@ W.battery = () => {
 W.media = () => {
   const m = OB.state.media;
   if (!m || !m.title) return null;
-  return h('div', { class: 'row', style: { gap: '0' } },
+  return h('div', { class: 'w-group' },
     panelBtn('media', '', m.art ? h('img', { class: 'art', src: m.art }) : icon('music', 16),
       h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '150px' } }, m.title), h('span', { class: 'sub ellipsis', style: { maxWidth: '150px' } }, m.artist || ''))),
     h('button', { class: 'w', 'data-media': 'playpause', title: m.playing ? 'Pause' : 'Play' }, icon(m.playing ? 'pause' : 'play', 14)),
@@ -152,28 +152,50 @@ function cmdWidget(id) {
 let openPanel = null;
 const cache = new Map();
 function renderZone(zone, names) {
+  if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
   const want = [];
-  for (const name of names) {
-    const fn = name.startsWith('cmd:') ? () => cmdWidget(name.slice(4)) : W[name];
+  const nodes = cache.get(zone) || new Map();
+  const next = new Map();
+  for (const [i, item] of names.entries()) {
+    const name = typeof item === 'string' ? item : item.widget;
+    const fn = name?.startsWith('cmd:') ? () => cmdWidget(name.slice(4))
+      : Object.hasOwn(W, name) ? W[name] : name ? null : () => dockShortcut(item);
     if (!fn) continue;
     let node = null;
     try { node = fn(); } catch (e) { console.error(name, e); }
     if (!node) continue;
-    node.dataset.w = name;
-    const key = zone + ':' + name;
-    const prev = cache.get(key);
-    if (prev && prev.outerHTML === node.outerHTML) want.push(prev);
-    else { cache.set(key, node); want.push(node); }
+    if (name) node.dataset.w = name;
+    const key = typeof item === 'string' ? `${name}:${i}` : item.id;
+    const prev = nodes.get(key);
+    if (prev && prev.outerHTML === node.outerHTML) node = prev;
+    next.set(key, node);
+    want.push(node);
   }
+  cache.set(zone, next);
   const cur = [...el.children];
   if (cur.length !== want.length || cur.some((c, i) => c !== want[i])) el.replaceChildren(...want);
 }
+function pillWidth(bar) {
+  const cs = getComputedStyle(bar);
+  const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+  const gap = parseFloat(cs.columnGap || cs.gap) || 0;
+  let w = pad + Math.max(0, bar.children.length - 1) * gap;
+  for (const z of bar.children) {
+    if (!z.childElementCount) continue;
+    const zcs = getComputedStyle(z);
+    const zgap = parseFloat(zcs.columnGap || zcs.gap) || 0;
+    w += Math.max(0, z.childElementCount - 1) * zgap;
+    for (const k of z.children) w += k.scrollWidth;
+  }
+  return Math.ceil(w + 2);
+}
 function render() {
+  if (dragFrom != null) return;
   const s = OB.settings;
   renderZone('left', s.left); renderZone('center', s.center); renderZone('right', s.right);
   const bar = document.getElementById('bar');
-  if (s.layout === 'pill') api.invoke('bar:width', Math.ceil(bar.scrollWidth + 2));
+  if (s.layout === 'pill') api.invoke('bar:width', pillWidth(bar));
 }
 let raf = 0;
 function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
@@ -203,14 +225,21 @@ function runningFor(p) {
   return (OB.state.windows || []).filter((w) => (w.path || '').toLowerCase() === t);
 }
 function cycle(wins) {
+  if (!wins.length) return;
   const i = wins.findIndex((w) => w.hwnd === OB.state.activeHwnd);
-  if (wins.length === 1 || i < 0) return api.invoke('win:action', (wins[i] || wins[0]).hwnd, i < 0 ? 'focus' : 'toggle');
+  if (wins.length === 1) return api.invoke('win:action', wins[0].hwnd, i < 0 ? 'focus' : 'toggle');
+  if (i < 0) {
+    const groupHandles = new Set(wins.map((w) => w.hwnd));
+    const recent = OB.state.recentHwnds.find((hwnd) => groupHandles.has(hwnd));
+    return api.invoke('win:action', recent ?? wins[0].hwnd, 'focus');
+  }
   api.invoke('win:action', wins[(i + 1) % wins.length].hwnd, 'focus');
 }
 
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button');
   if (!t) return;
+  if (t.dataset.tabItem) return api.invoke('tabs:open', document.getElementById('bar').dataset.customTab, t.dataset.tabItem);
   if (t.dataset.panel) return api.invoke('panel:toggle', t.dataset.panel, centerX(t));
   if (t.dataset.media) return api.invoke('media', t.dataset.media);
   if (t.dataset.sys) return api.invoke('system', t.dataset.sys);
@@ -249,14 +278,15 @@ document.addEventListener('contextmenu', async (e) => {
     return;
   }
   const id = await api.invoke('menu', [
-    { id: 'settings', label: 'OpenBar settings…' }, { id: 'apps', label: 'Pin apps…' }, { id: 'widgets', label: 'Arrange widgets…' }, { type: 'separator' },
+    { id: 'settings', label: 'OpenBar settings…' }, { id: 'apps', label: 'Pin apps…' }, { id: 'widgets', label: 'Arrange widgets…' },
+    { id: 'custom-tabs', label: 'Edit custom tabs…' }, { type: 'separator' },
     { id: 'pos', label: OB.settings.position === 'top' ? 'Move to bottom' : 'Move to top' },
     { id: 'layout', label: OB.settings.layout === 'pill' ? 'Full-width layout' : 'Floating pill layout' },
     { id: 'labels', label: 'Show app labels', checked: !!OB.settings.showLabels },
     { type: 'separator' }, { id: 'taskmgr', label: 'Task Manager' }, { id: 'quit', label: 'Quit OpenBar' },
   ]);
   if (id === 'settings') api.invoke('settings:open');
-  else if (id === 'apps' || id === 'widgets') api.invoke('settings:open', id);
+  else if (id === 'apps' || id === 'widgets' || id === 'custom-tabs') api.invoke('settings:open', id);
   else if (id === 'pos') OB.setSettings({ position: OB.settings.position === 'top' ? 'bottom' : 'top' });
   else if (id === 'layout') OB.setSettings({ layout: OB.settings.layout === 'pill' ? 'full' : 'pill' });
   else if (id === 'labels') OB.setSettings({ showLabels: !OB.settings.showLabels });
@@ -275,7 +305,12 @@ document.addEventListener('drop', (e) => {
   const [m] = pinned.splice(dragFrom, 1); pinned.splice(to, 0, m);
   OB.setSettings({ pinned });
 });
-document.addEventListener('dragend', () => { dragFrom = null; scheduleRender(); });
+document.addEventListener('dragend', (e) => {
+  if (dragFrom == null) return;
+  dragFrom = null;
+  e.target.classList.remove('dragging');
+  scheduleRender();
+});
 
 OB.init().then(() => {
   OB.on(scheduleRender);

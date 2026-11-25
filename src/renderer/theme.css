@@ -1,33 +1,53 @@
+/* Every style is a tinted sheet of glass: --bar-tint / --panel-tint sit over the native blur, and
+   [data-glass="off"] (no blur available, or transparency effects disabled) swaps in the opaque fallbacks. */
 :root {
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --bg: rgba(22, 24, 32, 0.86); --bg-solid: #16181f; --fg: #eef0f6; --muted: #9aa1b3; --line: rgba(255,255,255,0.09);
-  --hover: rgba(255,255,255,0.09); --active: rgba(255,255,255,0.16); --accent: #7c7cf8; --accent-fg: #fff;
-  --good: #34d399; --warn: #fbbf24; --bad: #f87171; --radius: 14px; --shadow: 0 8px 30px rgba(0,0,0,.35);
-  --panel-bg: rgba(24, 26, 34, 0.97);
+  --fg: #f5f5f7; --muted: rgba(245,245,247,.56); --line: rgba(255,255,255,.08);
+  --hover: rgba(255,255,255,.08); --active: rgba(255,255,255,.14); --accent: #0a84ff; --accent-fg: #fff;
+  --good: #30d158; --warn: #ffd60a; --bad: #ff453a; --today: #ff453a; --radius: 14px; --shadow: 0 8px 30px rgba(0,0,0,.35);
+  --bg-solid: #1c1c1f;
+  --bar-tint: rgba(18,18,22,.38); --bar-solid: rgba(28,28,32,.94); --bar-rim: rgba(255,255,255,.16);
+  --tile: rgba(0,0,0,.18); --tile-line: rgba(255,255,255,.12); --tile-hover: rgba(255,255,255,.08); --tile-on: rgba(255,255,255,.14);
+  --panel-tint: rgba(26,26,30,.7); --panel-solid: rgba(30,30,34,.98); --panel-rim: rgba(255,255,255,.12);
+  --card: rgba(255,255,255,.06); --card-line: rgba(255,255,255,.06);
+  --bg: var(--bar-tint); --panel-bg: var(--panel-tint);
 }
-[data-style="midnight"] { --bg: rgba(12, 18, 40, 0.9); --bg-solid: #0c1228; --panel-bg: rgba(14, 20, 44, 0.98); --accent: #60a5fa; --line: rgba(148,180,255,.14); }
-[data-style="black"] { --bg: rgba(0,0,0,0.92); --bg-solid: #000; --panel-bg: rgba(8,8,8,.98); --accent: #a3e635; --accent-fg: #111; }
-[data-style="white"] { --bg: rgba(250,250,252,0.9); --bg-solid: #fafafc; --fg: #17181c; --muted: #6b7080; --line: rgba(0,0,0,.08);
-  --hover: rgba(0,0,0,.06); --active: rgba(0,0,0,.11); --panel-bg: rgba(255,255,255,.98); --accent: #4f46e5; --shadow: 0 8px 30px rgba(0,0,0,.15); }
-[data-style="ios"] { --bg: rgba(240,240,245,0.78); --bg-solid: #f0f0f5; --fg: #111; --muted: #636366; --line: rgba(0,0,0,.07);
-  --hover: rgba(0,0,0,.06); --active: rgba(0,0,0,.1); --panel-bg: rgba(248,248,250,.98); --accent: #0a84ff; --radius: 22px; }
-[data-style="sunset"] { --bg: rgba(46, 16, 40, 0.88); --bg-solid: #2e1028; --panel-bg: rgba(50, 18, 44, .98); --accent: #fb7185; --line: rgba(255,170,200,.14); }
+[data-style="midnight"] { --bg-solid: #0c1228; --accent: #64a8ff; --line: rgba(148,180,255,.12);
+  --bar-tint: rgba(8,16,44,.42); --bar-solid: rgba(12,18,40,.95); --tile: rgba(0,8,36,.24); --tile-line: rgba(148,180,255,.16);
+  --panel-tint: rgba(10,18,46,.64); --panel-solid: rgba(14,20,44,.98); --card: rgba(148,180,255,.08); }
+[data-style="black"] { --bg-solid: #000; --accent: #a3e635; --accent-fg: #111;
+  --bar-tint: rgba(0,0,0,.72); --bar-solid: #000; --bar-rim: rgba(255,255,255,.1); --tile: rgba(255,255,255,.05); --tile-line: rgba(255,255,255,.08);
+  --panel-tint: rgba(0,0,0,.8); --panel-solid: rgba(8,8,8,.98); }
+[data-style="white"], [data-style="ios"] { --bg-solid: #f5f5f7; --fg: #1d1d1f; --muted: rgba(29,29,31,.55); --line: rgba(0,0,0,.07);
+  --hover: rgba(0,0,0,.05); --active: rgba(0,0,0,.09); --shadow: 0 8px 30px rgba(0,0,0,.15);
+  --bar-tint: rgba(250,250,252,.52); --bar-solid: rgba(250,250,252,.96); --bar-rim: rgba(255,255,255,.7);
+  --tile: rgba(255,255,255,.62); --tile-line: rgba(0,0,0,.06); --tile-hover: rgba(255,255,255,.85); --tile-on: #fff;
+  --panel-tint: rgba(246,246,248,.74); --panel-solid: rgba(248,248,250,.99); --panel-rim: rgba(255,255,255,.8);
+  --card: rgba(255,255,255,.7); --card-line: rgba(0,0,0,.05); }
+[data-style="white"] { --accent: #0071e3; }
+[data-style="ios"] { --accent: #0a84ff; --radius: 22px; --bar-tint: rgba(242,242,247,.4); --tile: rgba(255,255,255,.5); }
+[data-style="sunset"] { --bg-solid: #2e1028; --accent: #ff6b8b; --line: rgba(255,170,200,.12);
+  --bar-tint: rgba(64,14,44,.36); --bar-solid: rgba(46,16,40,.95); --tile: rgba(40,0,24,.2); --tile-line: rgba(255,170,200,.16);
+  --panel-tint: rgba(56,16,46,.62); --panel-solid: rgba(50,18,44,.98); --card: rgba(255,170,200,.08); }
+[data-glass="off"] { --bg: var(--bar-solid); --panel-bg: var(--panel-solid); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; font-family: var(--font); color: var(--fg); font-size: 13px; -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; }
-input, textarea, select { font: inherit; color: var(--fg); background: var(--hover); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; outline: none; }
+input, textarea, select { font: inherit; color: var(--fg); background: var(--hover); border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px; outline: none; }
 input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 select option { background: var(--bg-solid); color: var(--fg); }
 .ic { display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .muted { color: var(--muted); }
 .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
-.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 8px; background: var(--hover); }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9px; background: var(--hover); font-weight: 500; }
 .btn:hover { background: var(--active); }
 .btn.primary { background: var(--accent); color: var(--accent-fg); }
 .btn.primary:hover { filter: brightness(1.08); }
-.btn.icon { padding: 6px; }
+.btn.icon { padding: 6px; border-radius: 50%; }
 .row { display: flex; align-items: center; gap: 8px; }
 .grow { flex: 1; min-width: 0; }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: var(--active); border-radius: 4px; }
+::-webkit-scrollbar-corner { background: transparent; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

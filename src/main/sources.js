@@ -4,7 +4,7 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execFile } = require('child_process');
 
 // ---------- CPU / RAM / disk ----------
 let lastCpu = os.cpus();
@@ -35,11 +35,14 @@ function system() {
 }
 
 // ---------- PowerShell helper (media + network) ----------
+const helperPath = path.join(__dirname, 'helper.ps1').replace('app.asar', 'app.asar.unpacked');
+const helperArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helperPath];
+const mediaActions = new Set(['playpause', 'pause', 'prev', 'next']);
+
 function startHelper(onData) {
-  const script = path.join(__dirname, 'helper.ps1').replace('app.asar', 'app.asar.unpacked');
   let child = null, stopped = false, buf = '';
   const run = () => {
-    child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+    child = spawn('powershell.exe', helperArgs, { windowsHide: true });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (d) => {
       buf += d;
@@ -56,12 +59,22 @@ function startHelper(onData) {
   return () => { stopped = true; if (child) child.kill(); };
 }
 
+function controlMedia(action) {
+  if (!mediaActions.has(action)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    execFile('powershell.exe', [...helperArgs, '-MediaAction', action], { windowsHide: true, timeout: 10000 }, (err) => resolve(!err));
+  });
+}
+
 // ---------- HTTP helpers ----------
 async function getJson(url, opts = {}) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 15000);
   try {
     const r = await fetch(url, { ...opts, signal: ctl.signal, headers: { 'User-Agent': 'OpenBar/0.1', ...(opts.headers || {}) } });
+    if ((r.status === 429 || (r.status === 403 && r.headers.get('x-ratelimit-remaining') === '0')) && new URL(url).hostname === 'api.github.com') {
+      throw new Error('GitHub rate limit reached. Try again later or add a token in GitHub & crypto settings.');
+    }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } finally { clearTimeout(t); }
@@ -96,7 +109,7 @@ async function weather(cfg) {
     '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,is_day' +
     '&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max' +
     `&timezone=auto&forecast_days=7${unit}`);
-  return { place: loc.name, units: cfg.units, current: j.current, hourly: j.hourly, daily: j.daily, fetchedAt: Date.now() };
+  return { place: loc.name, units: cfg.units, utc_offset_seconds: j.utc_offset_seconds, current: j.current, hourly: j.hourly, daily: j.daily, fetchedAt: Date.now() };
 }
 
 // ---------- GitHub ----------
@@ -137,4 +150,4 @@ function runCommand(cmd) {
   });
 }
 
-module.exports = { system, disk, startHelper, weather, github, crypto, runCommand, getJson };
+module.exports = { system, disk, startHelper, controlMedia, weather, github, crypto, runCommand, getJson };

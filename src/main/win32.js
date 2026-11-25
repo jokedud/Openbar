@@ -6,6 +6,7 @@ const user32 = koffi.load('user32.dll');
 const kernel32 = koffi.load('kernel32.dll');
 const shell32 = koffi.load('shell32.dll');
 const dwmapi = koffi.load('dwmapi.dll');
+const gdi32 = koffi.load('gdi32.dll');
 const advapi32 = koffi.load('advapi32.dll');
 
 const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
@@ -47,6 +48,13 @@ const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProces
 const SHAppBarMessage = shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32_t msg, _Inout_ APPBARDATA *data)');
 const DwmGetWindowAttribute = dwmapi.func('long __stdcall DwmGetWindowAttribute(intptr_t hWnd, uint32_t attr, _Out_ uint32_t *val, uint32_t size)');
 const RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t key, const char16_t *subKey, const char16_t *value, uint32_t flags, void *type, void *data, _Out_ uint32_t *size)');
+
+// Native glass: an accent blur behind the window, clipped to a rounded region.
+const ACCENT_POLICY = koffi.struct('ACCENT_POLICY', { state: 'int', flags: 'int', color: 'uint32', animation: 'int' });
+const WINCOMPATTRDATA = koffi.struct('WINCOMPATTRDATA', { attribute: 'int', data: 'void *', size: 'size_t' });
+const SetWindowCompositionAttribute = user32.func('bool __stdcall SetWindowCompositionAttribute(intptr_t hWnd, WINCOMPATTRDATA *data)');
+const SetWindowRgn = user32.func('int __stdcall SetWindowRgn(intptr_t hWnd, intptr_t rgn, bool redraw)');
+const CreateRoundRectRgn = gdi32.func('intptr_t __stdcall CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h)');
 
 const GWL_EXSTYLE = -20;
 const WS_EX_TOOLWINDOW = 0x80;
@@ -135,6 +143,7 @@ function listTaskbarWindows(excludePids = new Set()) {
 
 function focusWindow(hwnd) {
   if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+  if (SetForegroundWindow(hwnd)) return true;
   // Synthesising an ALT tap lifts the foreground lock when we are not the active process.
   keybd_event(0x12, 0, 0, 0);
   keybd_event(0x12, 0, 2, 0);
@@ -146,13 +155,6 @@ function closeWindow(hwnd) { return PostMessageW(hwnd, WM_CLOSE, 0, 0); }
 function foregroundWindow() { return Number(GetForegroundWindow()); }
 
 // ---- media / system keys ----
-const VK = { playpause: 0xB3, next: 0xB0, prev: 0xB1, stop: 0xB2, volup: 0xAF, voldown: 0xAE, mute: 0xAD };
-function sendKey(name) {
-  const vk = VK[name];
-  if (vk === undefined) return;
-  keybd_event(vk, 0, 1, 0);
-  keybd_event(vk, 0, 1 | 2, 0);
-}
 function sendCombo(vks) {
   for (const k of vks) keybd_event(k, 0, 0, 0);
   for (const k of [...vks].reverse()) keybd_event(k, 0, 2, 0);
@@ -188,12 +190,20 @@ function setTaskbarAutoHide(on) {
 }
 
 function setTaskbarVisible(visible) {
-  for (const h of taskbarWindows()) ShowWindow(h, visible ? SW_SHOWNA : SW_HIDE);
+  const windows = taskbarWindows();
+  for (const h of windows) {
+    if (IsWindowVisible(h) !== visible) ShowWindow(h, visible ? SW_SHOWNA : SW_HIDE);
+  }
+  return windows.length > 0 && windows.every((h) => IsWindowVisible(h) === visible);
 }
 
-function taskbarVisible() {
-  const h = taskbarWindows()[0];
-  return h ? IsWindowVisible(h) : false;
+function hasTaskbar() {
+  return !!FindWindowW('Shell_TrayWnd', null);
+}
+
+function taskbarVisibilityIs(visible) {
+  const windows = taskbarWindows();
+  return windows.length > 0 && windows.every((h) => IsWindowVisible(h) === visible);
 }
 
 // ---- AppBar registration: reserves screen space so maximised windows don't cover the dock ----
@@ -227,10 +237,29 @@ function isLoginItemMissing(name) {
   return RegGetValueW(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Run', name, RRF_RT_ANY, null, null, [0]) === ERROR_FILE_NOT_FOUND;
 }
 
+const ACCENT_ENABLE_BLURBEHIND = 3;
+const WCA_ACCENT_POLICY = 19;
+let accentBuf = null;
+// Blurs whatever is behind hWnd ('blur') or removes the blur ('off'); returns the mode Windows accepted.
+// Plain blur rather than acrylic: it follows the window region, so rounded windows get no square corners.
+// The tint stays in CSS, so the accent colour is near-transparent.
+function setBackdrop(hWnd, mode) {
+  const state = mode === 'off' ? 0 : ACCENT_ENABLE_BLURBEHIND;
+  accentBuf = accentBuf || koffi.alloc(ACCENT_POLICY, 1);
+  koffi.encode(accentBuf, ACCENT_POLICY, { state, flags: 0, color: 0x01000000, animation: 0 });
+  const ok = SetWindowCompositionAttribute(hWnd, { attribute: WCA_ACCENT_POLICY, data: accentBuf, size: koffi.sizeof(ACCENT_POLICY) });
+  return ok && state ? 'blur' : 'off';
+}
+// Clips the window (and so its blur) to a rounded rectangle, in physical pixels; null removes the clip.
+function setRoundRegion(hWnd, r) {
+  const rgn = r ? CreateRoundRectRgn(r.x, r.y, r.x + r.width + 1, r.y + r.height + 1, 2 * r.radius, 2 * r.radius) : 0;
+  SetWindowRgn(hWnd, rgn, true);
+}
+
 module.exports = {
   listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, IsWindow: (h) => IsWindow(h),
-  processPath, processId, sendKey, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
-  getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, taskbarVisible, ABS_AUTOHIDE,
-  appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer,
+  processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
+  getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
+  appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
   isLoginItemMissing,
 };

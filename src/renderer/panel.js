@@ -16,21 +16,21 @@ const errOf = (k) => OB.state.errors && OB.state.errors[k];
 // ---------- launcher ----------
 let allApps = null, query = '', sel = 0;
 P.start = (body) => {
-  setHead('Apps', actionBtn('refresh', 'Re-scan Start Menu', async () => { allApps = await api.invoke('apps:list', true); drawApps(); }), settingsBtn('apps'));
+  const grid = h('div', { class: 'grid-apps' });
+  setHead('Apps', actionBtn('refresh', 'Re-scan Start Menu', async () => { allApps = await api.invoke('apps:list', true); drawApps(grid); }), settingsBtn('apps'));
   const input = h('input', { placeholder: 'Search apps…  (Enter to launch, Ctrl+Enter to pin)', style: { width: '100%', marginBottom: '10px' }, value: query });
-  input.addEventListener('input', () => { query = input.value; sel = 0; drawApps(); });
+  input.addEventListener('input', () => { query = input.value; sel = 0; drawApps(grid); });
   input.addEventListener('keydown', (e) => {
     const items = filtered();
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { sel = Math.min(items.length - 1, sel + (e.key === 'ArrowDown' ? 5 : 1)); drawApps(); e.preventDefault(); }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { sel = Math.max(0, sel - (e.key === 'ArrowUp' ? 5 : 1)); drawApps(); e.preventDefault(); }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { sel = Math.min(items.length - 1, sel + (e.key === 'ArrowDown' ? 5 : 1)); drawApps(grid); e.preventDefault(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { sel = Math.max(0, sel - (e.key === 'ArrowUp' ? 5 : 1)); drawApps(grid); e.preventDefault(); }
     if (e.key === 'Enter' && items[sel]) { if (e.ctrlKey) pin(items[sel]); else launch(items[sel]); }
     if (e.key === 'Escape') api.invoke('panel:close');
   });
-  const grid = h('div', { class: 'grid-apps', id: 'apps' });
   body.append(input, grid);
   setTimeout(() => input.focus(), 30);
-  if (!allApps) api.invoke('apps:list').then((a) => { allApps = a; drawApps(); });
-  drawApps();
+  if (!allApps) api.invoke('apps:list').then((a) => { allApps = a; drawApps(grid); });
+  drawApps(grid);
 };
 function filtered() {
   const q = query.trim().toLowerCase();
@@ -41,9 +41,7 @@ function filtered() {
 function launch(a) { api.invoke('launch', { path: a.path }); api.invoke('panel:close'); query = ''; }
 function pin(a) { if (!OB.settings.pinned.some((p) => p.path === a.path)) OB.setSettings({ pinned: [...OB.settings.pinned, { name: a.name, path: a.path, target: a.target || '' }] }); }
 const tileIcons = new Map();
-function drawApps() {
-  const grid = $('apps');
-  if (!grid) return;
+function drawApps(grid) {
   if (!allApps) { grid.replaceChildren(h('div', { class: 'empty', style: { gridColumn: '1/-1' } }, 'Indexing Start Menu…')); return; }
   const items = filtered().slice(0, 60);
   grid.replaceChildren(...items.map((a, i) => {
@@ -114,10 +112,11 @@ P.weather = (body) => {
   const c = w.current, deg = '°', [ic, label] = weatherInfo(c.weather_code);
   body.append(h('div', { class: 'card row' }, icon(ic, 40), h('div', { class: 'grow' }, h('div', { class: 'big' }, Math.round(c.temperature_2m) + deg),
     h('div', { class: 'muted' }, `${label} · feels ${Math.round(c.apparent_temperature)}${deg} · ${c.relative_humidity_2m}% humidity · wind ${Math.round(c.wind_speed_10m)}`))));
-  const nowIdx = w.hourly.time.findIndex((t) => new Date(t).getTime() >= Date.now() - 3600000);
+  const forecastHour = new Date(Date.now() + w.utc_offset_seconds * 1000).toISOString().slice(0, 13) + ':00';
+  const nowIdx = w.hourly.time.findIndex((t) => t >= forecastHour);
   const hours = h('div', { class: 'hours' });
   for (let i = Math.max(0, nowIdx); i < Math.max(0, nowIdx) + 24 && i < w.hourly.time.length; i++) {
-    hours.append(h('div', {}, h('span', { class: 'muted' }, new Date(w.hourly.time[i]).toLocaleTimeString([], { hour: 'numeric' })),
+    hours.append(h('div', {}, h('span', { class: 'muted' }, new Date(w.hourly.time[i] + 'Z').toLocaleTimeString([], { hour: 'numeric', timeZone: 'UTC' })),
       icon(weatherInfo(w.hourly.weather_code[i])[0], 16), h('b', {}, Math.round(w.hourly.temperature_2m[i]) + deg),
       h('span', { class: 'muted' }, (w.hourly.precipitation_probability[i] || 0) + '%')));
   }
@@ -192,27 +191,26 @@ P.pomodoro = (body) => {
 
 // ---------- todos ----------
 P.todos = (body) => {
+  const list = h('div');
+  const drawTodos = () => {
+    const todos = [...(OB.data.todos || [])].sort((a, b) => a.done - b.done);
+    const toggle = (t) => OB.setDataKey('todos', OB.data.todos.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x))).then(drawTodos);
+    const del = (t) => OB.setDataKey('todos', OB.data.todos.filter((x) => x.id !== t.id)).then(drawTodos);
+    list.replaceChildren(...todos.map((t) => h('div', { class: `list-item ${t.done ? 'done' : ''}` },
+      h('button', { class: 'check', onclick: () => toggle(t) }, t.done ? icon('check', 12) : null), h('span', { class: 't grow' }, t.text),
+      h('button', { class: 'x btn icon', title: 'Delete', onclick: () => del(t) }, icon('x', 12)))));
+    if (!todos.length) list.append(empty('All clear.'));
+  };
   setHead('To-dos', actionBtn('trash', 'Clear completed', () => OB.setDataKey('todos', OB.data.todos.filter((t) => !t.done)).then(drawTodos)));
   const input = h('input', { placeholder: 'Add a to-do and press Enter', style: { width: '100%', marginBottom: '8px' } });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && input.value.trim()) { OB.setDataKey('todos', [{ id: uid(), text: input.value.trim(), done: false, at: Date.now() }, ...OB.data.todos]).then(drawTodos); input.value = ''; }
     if (e.key === 'Escape') api.invoke('panel:close');
   });
-  body.append(input, h('div', { id: 'todos' }));
+  body.append(input, list);
   setTimeout(() => input.focus(), 30);
   drawTodos();
 };
-function drawTodos() {
-  const list = $('todos');
-  if (!list) return;
-  const todos = [...(OB.data.todos || [])].sort((a, b) => a.done - b.done);
-  const toggle = (t) => OB.setDataKey('todos', OB.data.todos.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x))).then(drawTodos);
-  const del = (t) => OB.setDataKey('todos', OB.data.todos.filter((x) => x.id !== t.id)).then(drawTodos);
-  list.replaceChildren(...todos.map((t) => h('div', { class: `list-item ${t.done ? 'done' : ''}` },
-    h('button', { class: 'check', onclick: () => toggle(t) }, t.done ? icon('check', 12) : null), h('span', { class: 't grow' }, t.text),
-    h('button', { class: 'x btn icon', title: 'Delete', onclick: () => del(t) }, icon('x', 12)))));
-  if (!todos.length) list.append(empty('All clear.'));
-}
 
 // ---------- notes ----------
 P.notes = (body) => {
@@ -277,18 +275,26 @@ P.quick = (body) => {
 };
 
 // ---------- router ----------
+function animateIn() {
+  const el = $('panel');
+  el.classList.remove('enter');
+  void el.offsetWidth;
+  el.classList.add('enter');
+}
 async function draw(force) {
   if (!force && stable.has(widget)) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
   const fn = P[widget];
   if (fn) await fn(body); else setHead(widget);
+  const scrolled = force === 'switch' ? [] : [...$('body').querySelectorAll('.hours')].map((el) => el.scrollLeft);
   $('body').replaceChildren(...body.childNodes);
+  $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
-  draw(true);
+  draw(true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
-  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch'); });
+  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });

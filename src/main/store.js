@@ -2,13 +2,14 @@
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
+const { normalizeCustomTabs } = require('./custom-tabs');
 
 const DEFAULT_SETTINGS = {
   position: 'bottom',          // bottom | top
-  layout: 'full',              // full | pill
+  layout: 'pill',              // full | pill
   style: 'glass',              // glass | midnight | white | black | ios
   height: 46,
-  margin: 6,
+  margin: 10,
   reserveSpace: true,          // register as an AppBar so maximised windows don't cover the dock
   taskbar: 'hide',             // hide | autohide | keep
   launchAtLogin: false,
@@ -18,6 +19,7 @@ const DEFAULT_SETTINGS = {
   left: ['start', 'apps'],
   center: [],
   right: ['media', 'weather', 'system', 'network', 'battery', 'pomodoro', 'todos', 'nextEvent', 'clock', 'quick'],
+  customTabs: [],
   pinned: [],                  // [{ name, path, args }]
   weather: { city: '', lat: null, lon: null, units: 'celsius' },
   calendars: [],               // [{ name, url }]
@@ -55,23 +57,31 @@ function deepMerge(base, over) {
   return out;
 }
 
+function mergeFile(base, over) {
+  const result = deepMerge(base, over);
+  if (result && Object.hasOwn(base, 'customTabs') && Object.hasOwn(over || {}, 'customTabs')) {
+    result.customTabs = normalizeCustomTabs(result.customTabs);
+  }
+  return result;
+}
+
 class JsonFile {
   constructor(name, defaults) {
     this.file = path.join(app.getPath('userData'), name);
     this.defaults = defaults;
     this.value = defaults;
     try {
-      this.value = deepMerge(defaults, JSON.parse(fs.readFileSync(this.file, 'utf8')));
+      this.value = mergeFile(defaults, JSON.parse(fs.readFileSync(this.file, 'utf8')));
     } catch (_) { /* first run */ }
     this.timer = null;
   }
   get() { return this.value; }
   set(patch) {
-    this.value = deepMerge(this.value, patch);
+    this.value = mergeFile(this.value, patch);
     this.save();
     return this.value;
   }
-  replace(v) { this.value = deepMerge(this.defaults, v); this.save(); return this.value; }
+  replace(v) { this.value = mergeFile(this.defaults, v); this.save(); return this.value; }
   save(now = false) {
     clearTimeout(this.timer);
     const write = () => {

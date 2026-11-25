@@ -1,7 +1,10 @@
 'use strict';
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, powerMonitor } = require('electron');
+const { stat } = require('fs/promises');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
+const { shortcutTarget } = require('./custom-tabs');
+const TaskbarRecovery = require('./taskbar-recovery');
 const sources = require('./sources');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
@@ -13,12 +16,12 @@ const APP_ID = 'xyz.openbar.app';
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 
-let settingsStore, dataStore;
+let settingsStore, dataStore, taskbarRecovery;
 let bar = null, panel = null, settingsWin = null, tray = null;
-let barHwnd = 0;
+let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
 const state = {
-  system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0,
+  system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
   errors: {},
 };
@@ -67,34 +70,100 @@ function layoutBar() {
   // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
   if (reserved && reserved.height > 0) b.y = reserved.y;
   bar.setBounds(b);
+  clipGlass(bar, barHwnd, S().margin, barRadius(S().height), b);
   bar.setAlwaysOnTop(true, 'screen-saver');
+}
+
+// ---------------- glass ----------------
+// Same ratios as --bar-r / --panel-r in theme.css and common.js, so the blur region matches the CSS shape.
+const barRadius = (height) => Math.round(height * 0.3);
+const PANEL_RADIUS = 18;
+let glassMode = 'off';
+function transparencyEnabled() {
+  try {
+    const key = require('path').win32.join('HKCU', 'Software', 'Microsoft', 'Windows', 'CurrentVersion', 'Themes', 'Personalize');
+    const out = require('child_process').execFileSync('reg', ['query', key, '/v', 'EnableTransparency'], { encoding: 'utf8', windowsHide: true });
+    return !/REG_DWORD\s+0x0\b/.test(out);
+  } catch { return true; }
+}
+function setBackdrop(hwnd, mode) {
+  try { return win32.setBackdrop(hwnd, mode); } catch (e) { console.error('backdrop', e); return 'off'; }
+}
+// The bar decides whether glass is on; panels follow it so both windows always share one tint.
+function enableGlass(hwnd) {
+  if (!isWin || !hwnd) return;
+  glassMode = setBackdrop(hwnd, transparencyEnabled() ? 'blur' : 'off');
+  state.glass = glassMode;
+  broadcast('state', { glass: glassMode });
+}
+// Windows broadcasts a theme change when "Transparency effects" is toggled.
+function refreshGlass() {
+  enableGlass(barHwnd);
+  if (panel && !panel.isDestroyed() && panelHwnd) setBackdrop(panelHwnd, glassMode);
+  layoutBar();
+}
+// Windows applies a resize lazily, so callers pass the size they just set instead of reading it back.
+function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
+  if (!isWin || !hwnd) return;
+  const { width, height } = size;
+  const k = screen.getDisplayMatching(win.getBounds()).scaleFactor;
+  const px = (v) => Math.round(v * k);
+  // Opaque windows drop the clip so a resized window is never cut to an old shape.
+  const region = glassMode === 'off' ? null
+    : { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) + 1 };
+  try { win32.setRoundRegion(hwnd, region); } catch (e) { console.error('region', e); }
 }
 
 // ---------------- Windows taskbar ----------------
 function applyTaskbar() {
   if (!isWin) return;
+  const pending = taskbarRecovery.pending();
+  if (pending && pending.id !== taskbarRecovery.id) {
+    taskbarRecovery.resume(pending);
+    return;
+  }
   const mode = S().taskbar;
-  const data = D();
   if (mode === 'keep') { restoreTaskbar(); return; }
-  if (!data.taskbarRestore) {
-    dataStore.set({ taskbarRestore: { autohide: (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0 } });
+  if (!win32.hasTaskbar()) return;
+  const visible = mode !== 'hide';
+  const original = D().taskbarRestore;
+  const autohide = (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0;
+  const alreadySet = autohide && win32.taskbarVisibilityIs(visible);
+  const legacy = original && !original.guarded;
+  const overridden = pending && pending.phase !== 'prepared';
+  if (alreadySet && !legacy && !overridden) return;
+  const baseline = legacy ? !!original.autohide : autohide;
+  if (!taskbarRecovery.arm(baseline)) {
+    if (overridden) restoreTaskbar();
+    return;
+  }
+  if (alreadySet && pending?.phase === 'applied') return;
+  // Journal intent before touching Explorer or replacing a legacy baseline.
+  if (!taskbarRecovery.recordOverride(baseline)) return;
+  if (pending?.phase === 'prepared') {
+    dataStore.set({ taskbarRestore: { autohide: baseline, guarded: true, id: taskbarRecovery.id } });
     dataStore.save(true);
   }
-  win32.setTaskbarAutoHide(true);
-  win32.setTaskbarVisible(mode !== 'hide');
-}
-
-// Explorer restarts and some shell actions bring the taskbar back; keep it hidden.
-function enforceTaskbar() {
-  if (isWin && S().taskbar === 'hide' && win32.taskbarVisible()) win32.setTaskbarVisible(false);
+  if (!autohide) win32.setTaskbarAutoHide(true);
+  if (win32.setTaskbarVisible(visible) && (win32.getTaskbarState() & win32.ABS_AUTOHIDE)) {
+    taskbarRecovery.markApplied();
+  }
 }
 
 function restoreTaskbar() {
-  if (!isWin) return;
+  if (!isWin || !taskbarRecovery) return;
+  const pending = taskbarRecovery.pending();
+  if (pending && pending.id !== taskbarRecovery.id) return;
   const r = D().taskbarRestore;
-  win32.setTaskbarVisible(true);
+  const original = pending && pending.phase !== 'prepared' ? pending : (r && !r.guarded ? r : null);
+  if (original) {
+    if (!win32.hasTaskbar()) return;
+    win32.setTaskbarAutoHide(!!original.autohide);
+    if (!win32.setTaskbarVisible(true) || !win32.hasTaskbar() ||
+        ((win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0) !== !!original.autohide) return;
+  }
+  taskbarRecovery.restored();
   if (r) {
-    win32.setTaskbarAutoHide(!!r.autohide);
     dataStore.set({ taskbarRestore: null });
     dataStore.save(true);
   }
@@ -146,12 +215,18 @@ async function pollWindows() {
     dataStore.save();
     if (now - (pollWindows.stSent || 0) > 30000) { pollWindows.stSent = now; broadcast('data', D()); }
   }
-  const sig = JSON.stringify(list.map((w) => [w.hwnd, w.title, w.minimized])) + active;
+  const previousOrder = new Map(state.windows.map((w, i) => [w.hwnd, i]));
+  const rank = (w) => previousOrder.get(w.hwnd) ?? previousOrder.size;
+  const recentHwnds = list.map((w) => w.hwnd);
+  const appKeys = new Set(list.map((w) => (w.path || w.exe).toLowerCase()));
+  const windowAppOrder = state.windowAppOrder.filter((key) => appKeys.delete(key)).concat([...appKeys]);
+  list.sort((a, b) => rank(a) - rank(b));
+  const sig = JSON.stringify([list.map((w) => [w.hwnd, w.title, w.minimized]), active, recentHwnds, windowAppOrder]);
   if (sig !== pollWindows.sig) {
     pollWindows.sig = sig;
-    state.windows = list;
-    state.activeHwnd = active;
-    broadcast('state', { windows: list, activeHwnd: active });
+    const windowState = { windows: list, activeHwnd: active, recentHwnds, windowAppOrder };
+    Object.assign(state, windowState);
+    broadcast('state', windowState);
   }
 }
 
@@ -229,7 +304,7 @@ function runAutomations() {
     }
     if (a.pauseMusicBeforeMeetings && mins <= a.pauseMinutesBefore && mins > a.pauseMinutesBefore - 1 && !fired.has('p' + ev.id)) {
       fired.add('p' + ev.id);
-      if (mediaPlaying()) win32.sendKey('playpause');
+      if (mediaPlaying()) sources.controlMedia('pause');
     }
   }
   const day = localDay();
@@ -269,12 +344,13 @@ function pomodoroAction(action) {
   if (action === 'start') {
     if (p.phase === 'paused') { p.phase = p.resumePhase || 'focus'; p.endsAt = now + p.remainingMs; }
     else { p.phase = 'focus'; p.endsAt = now + cfg.focusMin * 60000; }
-    if (S().automations.pauseMusicOnPomodoro && mediaPlaying()) win32.sendKey('playpause');
+    if (S().automations.pauseMusicOnPomodoro && mediaPlaying()) sources.controlMedia('pause');
   } else if (action === 'pause' && (p.phase === 'focus' || p.phase === 'break')) {
     p.resumePhase = p.phase; p.remainingMs = Math.max(0, p.endsAt - now); p.phase = 'paused';
   } else if (action === 'reset') {
     p.phase = 'idle'; p.endsAt = 0; p.remainingMs = 0;
   } else if (action === 'skip') {
+    if (p.phase === 'paused') p.phase = p.resumePhase || 'focus';
     p.endsAt = now;
     tickPomodoro();
   }
@@ -309,20 +385,25 @@ function createBar() {
     title: 'OpenBar', icon: ICON, webPreferences,
   });
   bar.setAlwaysOnTop(true, 'screen-saver');
+  bar.webContents.on('render-process-gone', () => {
+    if (!cleanedUp && isWin && D().taskbarRestore) app.quit();
+  });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
+  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); nativeTheme.on('updated', refreshGlass); }
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 480], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 420], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; return; }
-  const [w, h] = PANEL_SIZES[widget] || [360, 420];
+  const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
   const bb = bar.getBounds();
   const d = screen.getDisplayMatching(bb).workArea;
   const db = screen.getDisplayMatching(bb).bounds;
+  const room = S().position === 'top' ? db.y + db.height - (bb.y + bb.height) : bb.y - db.y;
+  const h = Math.min(preferredH, room - 14);
   let x = Math.round(bb.x + (anchorX || bb.width / 2) - w / 2);
   x = Math.max(db.x + 8, Math.min(x, db.x + db.width - w - 8));
   const gap = 6;
@@ -336,9 +417,13 @@ function togglePanel(widget, anchorX) {
     panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
+    panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
+    if (panelHwnd) setBackdrop(panelHwnd, glassMode);
+    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
     panel.setBounds({ x, y, width: w, height: h });
+    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
     panel.webContents.send('panel:widget', widget);
     panel.show(); panel.focus();
   }
@@ -443,10 +528,29 @@ function registerIpc() {
     setTimeout(pollWindows, 120);
   });
   ipcMain.handle('launch', (_e, item) => launch(item));
+  ipcMain.handle('tabs:target', (_e, kind, value) => shortcutTarget(kind, value));
+  ipcMain.handle('tabs:browse', async (e, kind) => {
+    if (kind !== 'app' && kind !== 'folder') return null;
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), kind === 'folder'
+      ? { title: 'Choose a folder', properties: ['openDirectory'] }
+      : { title: 'Choose an app', properties: ['openFile', 'noResolveAliases'], filters: [{ name: 'Apps', extensions: ['exe', 'lnk', 'appref-ms'] }] });
+    return result.canceled ? null : result.filePaths[0];
+  });
+  ipcMain.handle('tabs:open', async (e, tabId, itemId) => {
+    const item = S().customTabs.find((t) => t.id === tabId)?.items.find((i) => i.id === itemId);
+    if (!item || item.kind === 'widget') return;
+    let detail;
+    try {
+      if (item.kind === 'website') await shell.openExternal(item.target);
+      else if (item.kind === 'folder' && !(await stat(item.target)).isDirectory()) detail = 'The target is not a folder.';
+      else detail = await shell.openPath(item.target);
+    } catch (error) { detail = error.message; }
+    if (detail) await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender), { type: 'error', message: 'Could not open this shortcut', detail });
+  });
   ipcMain.handle('apps:list', (_e, force) => startmenu.listApps(force));
   ipcMain.handle('apps:icon', (_e, file) => startmenu.iconFor(file));
   ipcMain.handle('exe:icon', (_e, file) => exeIcon(file));
-  ipcMain.handle('media', (_e, key) => { if (win32) win32.sendKey(key); });
+  ipcMain.handle('media', (_e, action) => isWin && sources.controlMedia(action));
   ipcMain.handle('system', (_e, action) => { const f = SYSTEM_ACTIONS[action]; if (f) f(); });
   ipcMain.handle('open', (_e, url) => { if (SAFE_URL.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
@@ -481,6 +585,7 @@ app.on('second-instance', () => openSettings());
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
+  if (isWin) taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
   const firstRun = !require('fs').existsSync(settingsStore.file);
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
@@ -498,7 +603,7 @@ app.whenReady().then(() => {
   const timers = [
     every(1000, pollWindows),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
-    every(3000, enforceTaskbar),
+    every(3000, applyTaskbar),
     every(60 * 1000, refreshers.disk),
     every(15 * 60 * 1000, refreshers.weather),
     every(5 * 60 * 1000, refreshers.calendar),
