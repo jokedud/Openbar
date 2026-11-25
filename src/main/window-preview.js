@@ -372,16 +372,16 @@ class WindowPreviewController {
     const h = Number(hwnd);
     if (!this.isWin || !this.win32 || !Number.isFinite(h) || h <= 0 || !this.win32.IsWindow(h)) return false;
     if (action === 'focus') {
-      this.win32.focusWindow(h);
       this.hide();
+      this.win32.focusWindow(h);
     } else if (action === 'restore') {
+      this.hide();
       this.win32.restoreWindow(h);
       this.win32.focusWindow(h, { restore: false });
-      this.hide();
     } else if (action === 'maximize') {
+      this.hide();
       this.win32.maximizeWindow(h);
       this.win32.focusWindow(h, { restore: false });
-      this.hide();
     } else if (action === 'minimize') {
       this.win32.minimizeWindow(h);
     } else if (action === 'close') {

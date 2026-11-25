@@ -1,9 +1,19 @@
 'use strict';
 const assert = require('node:assert/strict');
+const { execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { test } = require('node:test');
+const { promisify } = require('node:util');
 const vm = require('node:vm');
+
+if (process.versions.electron) {
+  runPreviewInteractionCheck().then((result) => {
+    process.stdout.write(JSON.stringify(result) + '\n', () => process.exit(0));
+  }, (error) => {
+    process.stderr.write(`${error.stack}\n`, () => process.exit(1));
+  });
+} else {
+const { test } = require('node:test');
 
 function loadPreviewModule(electronMock) {
   const mod = { exports: {} };
@@ -242,3 +252,61 @@ test('DWM thumbnail properties use the Win32 ABI layout', { skip: process.platfo
   assert.equal(koffi.offsetof(properties, 'fVisible'), 40);
   assert.equal(koffi.offsetof(properties, 'fSourceClientAreaOnly'), 44);
 });
+
+test('preview card click survives live preview:data updates without detaching the card', async () => {
+  const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
+  const r = JSON.parse(stdout.trim());
+  assert.equal(r.sameNode, true, 'preview card DOM node should be patched in place across live updates');
+  assert.equal(r.title, 'Draft 2 - Notepad');
+  assert.deepEqual(r.actions, [[42, 'focus']]);
+});
+}
+
+async function runPreviewInteractionCheck() {
+  const { app, BrowserWindow, ipcMain } = require('electron');
+  const src = path.join(__dirname, '..', 'src');
+  await app.whenReady();
+  const actions = [];
+  ipcMain.handle('init', () => ({
+    settings: { layout: 'pill', position: 'bottom', style: 'glass', height: 54, margin: 10 },
+    data: {}, state: { glass: 'off' }, platform: 'win32', version: '0.1.2',
+  }));
+  ipcMain.on('surface:bounds', () => {});
+  ipcMain.on('surface:mouse', () => {});
+  ipcMain.on('preview:slots', () => {});
+  ipcMain.handle('preview:action', (_e, hwnd, action) => { actions.push([hwnd, action]); return true; });
+  const win = new BrowserWindow({
+    x: 80, y: 80, width: 320, height: 240,
+    frame: false, transparent: true, show: false, focusable: false, hasShadow: false,
+    webPreferences: { preload: path.join(src, 'preload.js'), backgroundThrottling: false },
+  });
+  await win.loadFile(path.join(src, 'renderer', 'preview.html'));
+  // Wait for OB.init() to register preview:data listener.
+  await win.webContents.executeJavaScript('new Promise((r) => setTimeout(r, 50))');
+  const payload = (title, active) => ({
+    windows: [{ hwnd: 42, title, exe: 'notepad.exe', icon: '', minimized: false, maximized: false, active }],
+    compact: false, switching: true, hasLiveThumbnails: true,
+  });
+  win.webContents.send('preview:data', payload('Draft 1 - Notepad', false));
+  const pos = await win.webContents.executeJavaScript(`new Promise((resolve) => {
+    const wait = () => {
+      const card = document.querySelector('.preview-card');
+      if (!card) return setTimeout(wait, 10);
+      window.__card = card;
+      const r = card.getBoundingClientRect();
+      resolve({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) });
+    };
+    wait();
+  })`);
+  win.webContents.sendInputEvent({ type: 'mouseDown', x: pos.x, y: pos.y, button: 'left', clickCount: 1 });
+  win.webContents.send('preview:data', payload('Draft 2 - Notepad', true));
+  await new Promise((r) => setTimeout(r, 30));
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: pos.x, y: pos.y, button: 'left', clickCount: 1 });
+  await new Promise((r) => setTimeout(r, 50));
+  const check = await win.webContents.executeJavaScript(`({
+    sameNode: document.querySelector('.preview-card') === window.__card,
+    title: document.querySelector('.preview-title')?.textContent,
+  })`);
+  win.destroy();
+  return { actions, ...check };
+}

@@ -43,6 +43,9 @@ const GetWindowThreadProcessId = user32.func('uint32_t __stdcall GetWindowThread
 const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow()');
 const GetWindowRect = user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)');
 const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(intptr_t hWnd)');
+const BringWindowToTop = user32.func('bool __stdcall BringWindowToTop(intptr_t hWnd)');
+const AttachThreadInput = user32.func('bool __stdcall AttachThreadInput(uint32_t idAttach, uint32_t idAttachTo, bool fAttach)');
+const SwitchToThisWindow = user32.func('void __stdcall SwitchToThisWindow(intptr_t hWnd, bool fAltTab)');
 const ShowWindow = user32.func('bool __stdcall ShowWindow(intptr_t hWnd, int cmd)');
 const ShowWindowAsync = user32.func('bool __stdcall ShowWindowAsync(intptr_t hWnd, int cmd)');
 const FindWindowW = user32.func('intptr_t __stdcall FindWindowW(const char16_t *cls, const char16_t *name)');
@@ -55,6 +58,7 @@ const AllowSetForegroundWindow = user32.func('bool __stdcall AllowSetForegroundW
 
 const OpenProcess = kernel32.func('intptr_t __stdcall OpenProcess(uint32_t access, bool inherit, uint32_t pid)');
 const CloseHandle = kernel32.func('bool __stdcall CloseHandle(intptr_t h)');
+const GetCurrentThreadId = kernel32.func('uint32_t __stdcall GetCurrentThreadId()');
 const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProcessImageNameW(intptr_t h, uint32_t flags, _Out_ uint8_t *buf, _Inout_ uint32_t *size)');
 
 const SHAppBarMessage = shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32_t msg, _Inout_ APPBARDATA *data)');
@@ -167,7 +171,32 @@ function focusWindow(hwnd, { restore = true } = {}) {
   // Synthesising an ALT tap lifts the foreground lock when we are not the active process.
   keybd_event(0x12, 0, 0, 0);
   keybd_event(0x12, 0, 2, 0);
-  return SetForegroundWindow(hwnd);
+  if (SetForegroundWindow(hwnd)) return true;
+  // On Windows 11 (e.g. 24H2) from a non-activating window, attach to the foreground/target
+  // thread input queues to acquire activation rights, then fall back to SwitchToThisWindow.
+  let focused = false;
+  if (typeof AttachThreadInput === 'function' && typeof GetCurrentThreadId === 'function' &&
+      typeof GetWindowThreadProcessId === 'function' && typeof GetForegroundWindow === 'function') {
+    const curTid = GetCurrentThreadId();
+    const fgHwnd = Number(GetForegroundWindow());
+    const fgTid = fgHwnd ? GetWindowThreadProcessId(fgHwnd, [0]) : 0;
+    const targetTid = GetWindowThreadProcessId(hwnd, [0]);
+    const attachedFg = !!(fgTid && fgTid !== curTid && AttachThreadInput(curTid, fgTid, true));
+    const attachedTarget = !!(targetTid && targetTid !== curTid && targetTid !== fgTid && AttachThreadInput(curTid, targetTid, true));
+    try {
+      if (typeof BringWindowToTop === 'function') BringWindowToTop(hwnd);
+      if (restore && IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+      focused = !!SetForegroundWindow(hwnd);
+    } finally {
+      if (attachedTarget) AttachThreadInput(curTid, targetTid, false);
+      if (attachedFg) AttachThreadInput(curTid, fgTid, false);
+    }
+  }
+  if (!focused && typeof SwitchToThisWindow === 'function') {
+    SwitchToThisWindow(hwnd, !!restore);
+    focused = typeof GetForegroundWindow === 'function' ? Number(GetForegroundWindow()) === hwnd : true;
+  }
+  return focused;
 }
 
 function minimizeWindow(hwnd) { return ShowWindowAsync(hwnd, SW_MINIMIZE); }
