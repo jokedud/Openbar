@@ -33,6 +33,8 @@ if (process.versions.electron) {
     assert.equal(groups.icons, groups.titles.length);
     assert.deepEqual(actions, ['close', [10, 'focus'], 'close'], 'selection closes before focus, and Escape closes');
     assert.equal(tightTab.moreVisible, true, `Overflow button must fit in the selected tab: ${JSON.stringify(tightTab)}`);
+    assert.equal(tightTab.rightFits, true, `Right controls must stay inside a crowded pill: ${JSON.stringify(tightTab)}`);
+    assert.equal(tightTab.lastControlReachable, true, 'Scrolling the right zone reaches its last control');
     assert.equal(fullCenter.moreVisible, true, `Centered overflow button must fit in the full bar: ${JSON.stringify(fullCenter)}`);
     assert.equal(fullCenter.moreClickable, true, `Right widgets must not cover centered overflow: ${JSON.stringify(fullCenter)}`);
     assert.equal(fullCenter.rightFits, true);
@@ -117,7 +119,12 @@ async function measureDock() {
     const left = document.getElementById('left');
     const more = left.querySelector('.app-more');
     const tile = more.getBoundingClientRect(), zone = left.getBoundingClientRect();
-    return { zoneWidth: left.clientWidth, moreVisible: !more.hidden && tile.width > 0 && tile.right <= zone.right + 1 };
+    const right = document.getElementById('right');
+    const rightBounds = right.getBoundingClientRect(), bar = document.getElementById('bar').getBoundingClientRect();
+    right.lastElementChild.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 800 }));
+    return { zoneWidth: left.clientWidth, moreVisible: !more.hidden && tile.width > 0 && tile.right <= zone.right + 1,
+      rightFits: rightBounds.width > 0 && rightBounds.right <= bar.right,
+      lastControlReachable: right.scrollLeft > 0 && right.lastElementChild.getBoundingClientRect().right <= rightBounds.right + 1 };
   })()`);
   const fullCenter = await win.webContents.executeJavaScript(`(async () => {
     Object.assign(OB.settings, { layout: 'full', customTabs: [], left: [], center: ['apps'], right: ['search', 'desktop'] });

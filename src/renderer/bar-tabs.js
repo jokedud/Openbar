@@ -5,12 +5,15 @@ const dockTabs = h('nav', { id: 'dock-tabs', 'aria-label': 'Dock tabs' });
 const shortcutIcons = { app: 'desktop', folder: 'folder', website: 'link' };
 const dockLeft = document.getElementById('left');
 
-dockLeft.addEventListener('wheel', (e) => {
-  if ((!dockTabId && OB.settings.layout === 'pill') || e.ctrlKey || e.deltaX ||
-      !e.deltaY || dockLeft.scrollWidth <= dockLeft.clientWidth) return;
+document.addEventListener('wheel', (e) => {
+  const strip = e.target.closest('#dock-tabs, #left, #right');
+  if (!strip || e.ctrlKey || e.deltaX || !e.deltaY || strip.scrollWidth <= strip.clientWidth) return;
+  const pill = OB.settings.layout === 'pill';
+  if ((strip.id === 'left' && !dockTabId && pill) ||
+      (strip.id === 'right' && (!dockTabId || !pill))) return;
   e.preventDefault();
-  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? dockLeft.clientWidth : 1;
-  dockLeft.scrollLeft += e.deltaY * unit;
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? strip.clientWidth : 1;
+  strip.scrollLeft += e.deltaY * unit;
 }, { passive: false });
 
 function dockTabItems(homeItems) {
