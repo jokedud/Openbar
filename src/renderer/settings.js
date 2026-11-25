@@ -11,6 +11,7 @@ const WIDGETS = {
   pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', github: 'GitHub activity', devin: 'Devin sessions', crypto: 'Crypto prices', screenTime: 'Screen time',
   quick: 'Quick actions', settings: 'Settings button',
   bluetooth: 'Bluetooth',
+  notifications: 'Notifications',
   trayApps: 'Background apps',
 };
 let tab = new URLSearchParams(location.search).get('tab') || 'general';
