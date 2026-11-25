@@ -1,0 +1,63 @@
+#panel[data-widget="battery"] {
+  --battery-shift: 14px;
+  --battery-accent: var(--accent);
+  background: radial-gradient(ellipse at 82% -10%, color-mix(in srgb, var(--accent) 23%, transparent), transparent 66%), var(--panel-bg);
+}
+[data-position="top"] #panel[data-widget="battery"] { --battery-shift: -14px; }
+#panel[data-widget="battery"].enter {
+  animation: battery-panel-in .38s cubic-bezier(.2,.85,.3,1) both;
+}
+@keyframes battery-panel-in {
+  from { opacity: 0; transform: translateY(var(--battery-shift)) scale(.88,.79); }
+  72% { transform: translateY(0) scale(1.006,1.004); }
+}
+#panel[data-widget="battery"] .battery-content { display: grid; gap: 10px; }
+#panel[data-widget="battery"] .battery-hero,
+#panel[data-widget="battery"] .battery-mode-card,
+#panel[data-widget="battery"] .battery-settings-list {
+  border: 1px solid var(--panel-rim);
+  border-radius: 13px;
+  background: var(--card);
+}
+#panel[data-widget="battery"] .battery-hero {
+  display: grid; gap: 13px; padding: 13px;
+  background: linear-gradient(112deg, color-mix(in srgb, var(--battery-accent) 16%, transparent), transparent 90%), var(--card);
+}
+#panel[data-widget="battery"] [data-battery-state="charging"],
+#panel[data-widget="battery"] [data-battery-state="saver"] { --battery-accent: var(--good); }
+#panel[data-widget="battery"] [data-battery-state="low"] { --battery-accent: var(--bad); }
+#panel[data-widget="battery"] .battery-summary { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+#panel[data-widget="battery"] .battery-symbol {
+  flex: none; width: 46px; height: 46px; display: grid; place-items: center; border-radius: 14px;
+  color: color-mix(in srgb, var(--battery-accent) 67%, var(--fg));
+  background: color-mix(in srgb, var(--battery-accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--battery-accent) 37%, transparent);
+}
+#panel[data-widget="battery"] .battery-level { font-size: 27px; line-height: 1.16; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+#panel[data-widget="battery"] .battery-detail { color: var(--muted); font-size: 12px; line-height: 1.4; }
+#panel[data-widget="battery"] .battery-gauge { height: 8px; overflow: hidden; border-radius: 999px; background: var(--active); }
+#panel[data-widget="battery"] .battery-gauge > span {
+  display: block; width: 100%; height: 100%; border-radius: inherit; transform-origin: left center;
+  transform: scaleX(var(--battery-level, 0)); transition: transform .65s cubic-bezier(.2,.85,.3,1);
+  background: linear-gradient(90deg, var(--battery-accent), color-mix(in srgb, var(--battery-accent) 60%, var(--fg)));
+}
+#panel[data-widget="battery"].enter .battery-gauge > span { animation: battery-fill-in .7s cubic-bezier(.2,.85,.3,1); }
+@keyframes battery-fill-in { from { transform: scaleX(0); } }
+#panel[data-widget="battery"] [data-battery-state="charging"] .battery-symbol > span { animation: battery-bolt-pulse 2.2s ease-in-out infinite; }
+@keyframes battery-bolt-pulse { 50% { transform: scale(1.15); filter: drop-shadow(0 0 5px currentColor); } }
+#panel[data-widget="battery"] .battery-mode-card { padding: 10px 12px; }
+#panel[data-widget="battery"] .battery-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; font-weight: 600; }
+#panel[data-widget="battery"] .battery-mode-row select { font-size: 12px; padding: 4px 6px; font-weight: 500; }
+#panel[data-widget="battery"] .battery-mode-row select[aria-disabled="true"] { opacity: .65; }
+#panel[data-widget="battery"] .battery-mode-card .battery-detail:not(:empty) { margin-top: 4px; }
+#panel[data-widget="battery"] .battery-settings {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-height: 36px; text-align: left;
+  padding: 6px 12px; border-radius: 12px; font-weight: 500;
+}
+#panel[data-widget="battery"] .battery-settings::after {
+  content: ''; margin-left: auto; width: 6px; height: 6px; border: solid var(--muted); border-width: 1.5px 1.5px 0 0;
+  transform: rotate(45deg);
+}
+#panel[data-widget="battery"] .battery-settings:hover { background: var(--hover); }
+#panel[data-widget="battery"] .battery-settings:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#panel[data-widget="battery"] [hidden] { display: none; }

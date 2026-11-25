@@ -13,6 +13,7 @@ const devin = require('./devin');
 const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth');
 const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
+const { createBattery, openPowerSettings } = require('./battery');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -44,6 +45,7 @@ let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
 let devinPanelSize = null;
+let batteryNative, batteryEstimate;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
@@ -330,6 +332,22 @@ const refreshers = {
   crypto: () => refresh('crypto', () => sources.crypto(S().crypto)),
 };
 
+function refreshBattery() {
+  if (!batteryNative) return;
+  const s = S();
+  if (!['left', 'center', 'right'].some((zone) => s[zone].includes('battery')) &&
+      !s.customTabs.some((tab) => tab.items.some((item) => item.widget === 'battery'))) return;
+  const next = batteryNative.read();
+  if (state.battery && Object.keys(next).every((key) => next[key] === state.battery[key])) return;
+  state.battery = next;
+  broadcast('state', { battery: next });
+}
+
+function stopBatteryEstimate() {
+  batteryEstimate?.abort();
+  batteryEstimate = null;
+}
+
 const cmdTimers = new Map();
 function scheduleCommands() {
   for (const t of cmdTimers.values()) clearInterval(t);
@@ -470,18 +488,26 @@ function createBar() {
   });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); refreshGlass(); nativeTheme.on('updated', refreshGlass); }
+  if (isWin) {
+    barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
+    stoppers.push(batteryNative.watchSaver(bar, barHwnd, refreshBattery));
+    refreshGlass();
+    nativeTheme.on('updated', refreshGlass);
+  }
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [356, 250], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [356, 250], battery: [344, 326], quick: [320, 320], start: [520, 560] };
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
 
 function togglePanel(widget, anchorX) {
+  if (panelWidget === 'battery') stopBatteryEstimate();
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
-  const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
+  const power = widget === 'battery' ? batteryNative?.read() : null;
+  const [w, preferredH] = power?.present === false ?
+    [PANEL_SIZES.battery[0], 266] : PANEL_SIZES[widget] || [360, 420];
   const viewport = bar.getBounds();
   const bb = padBounds(viewport, -barShadowPadding());
   const db = screen.getDisplayMatching(bb).bounds;
@@ -502,7 +528,8 @@ function togglePanel(widget, anchorX) {
     panel.setAlwaysOnTop(true, 'screen-saver');
     panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
     panel.on('hide', () => { if (panelWidget === 'volume') panel.webContents.send('volume:hidden'); });
-    panel.on('closed', () => { panel = null; panelWidget = null; });
+    panel.on('hide', stopBatteryEstimate);
+    panel.on('closed', () => { stopBatteryEstimate(); panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
@@ -527,7 +554,7 @@ function fitDevinPanel(e, contentHeight) {
 }
 
 function openSettings(tab) {
-  if (panelWidget === 'bluetooth') { panelWidget = null; broadcast('panel', null); }
+  if (panelWidget === 'bluetooth' || panelWidget === 'battery') { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
   settingsWin = new BrowserWindow({
@@ -678,6 +705,22 @@ function registerIpc() {
     if (!change || panelWidget !== 'volume' || !panel?.isVisible() || e.sender !== panel.webContents) return VOLUME_UNAVAILABLE;
     return refreshVolume(change);
   });
+  const batteryPanel = (e) => panelWidget === 'battery' && e.sender === panel?.webContents;
+  ipcMain.handle('battery:details', (e) => batteryPanel(e) && batteryNative ?
+    { ...batteryNative.read(), mode: batteryNative.mode() } : null);
+  ipcMain.handle('battery:mode', (e, mode) => !!(batteryPanel(e) && batteryNative?.setMode(mode)));
+  ipcMain.handle('battery:settings', (e, target) => !!batteryNative && batteryPanel(e) && openPowerSettings(shell, target));
+  ipcMain.handle('battery:charge-time', async (e) => {
+    if (!batteryPanel(e) || !batteryNative?.read().charging || batteryEstimate) return null;
+    const request = new AbortController();
+    batteryEstimate = request;
+    try {
+      const seconds = await batteryNative.chargeTime(request.signal);
+      return !request.signal.aborted && batteryPanel(e) && batteryNative.read().charging ? seconds : null;
+    } finally {
+      if (batteryEstimate === request) batteryEstimate = null;
+    }
+  });
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
   ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); applySettings(prev); return S(); });
@@ -775,7 +818,10 @@ app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
   devinStore = new JsonFile('devin.json', { encrypted: '', orgId: '' });
-  if (isWin) taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
+  if (isWin) {
+    taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
+    batteryNative = createBattery();
+  }
   const firstRun = !require('fs').existsSync(settingsStore.file);
   migrateBluetoothLayout();
   const volumeMigration = volumeLayoutMigration(S());
@@ -803,6 +849,7 @@ app.whenReady().then(() => {
     }),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
     every(3000, applyTaskbar),
+    every(10000, refreshBattery),
     every(60 * 1000, refreshers.disk),
     every(15 * 60 * 1000, refreshers.weather),
     every(5 * 60 * 1000, refreshers.calendar),
@@ -816,7 +863,7 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', layoutBar);
   screen.on('display-added', layoutBar);
   screen.on('display-removed', layoutBar);
-  powerMonitor.on('resume', () => { layoutBar(); Object.values(refreshers).forEach((f) => f()); });
+  powerMonitor.on('resume', () => { layoutBar(); refreshBattery(); Object.values(refreshers).forEach((f) => f()); });
   if (firstRun) setTimeout(() => openSettings('welcome'), 1200);
 });
 
@@ -824,6 +871,7 @@ let cleanedUp = false;
 function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
+  stopBatteryEstimate();
   try { stoppers.forEach((f) => f()); } catch (_) { /* ignore */ }
   try { if (isWin && barHwnd) win32.appBarRemove(barHwnd); } catch (_) { /* ignore */ }
   try { restoreTaskbar(); } catch (_) { /* ignore */ }
