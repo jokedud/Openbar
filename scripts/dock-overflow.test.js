@@ -45,6 +45,7 @@ if (process.versions.electron) {
     for (const [mode, result] of Object.entries(crowded)) {
       assert.equal(result.moreClickable && result.zonesFit, true, `${mode}: ${JSON.stringify(result)}`);
       assert.equal(result.opened, true, `${mode}: More apps opens with hidden windows`);
+      assert.equal(result.widgetsReachable, true, `${mode}: widget strips must not collapse: ${JSON.stringify(result)}`);
     }
     assert.equal(tabFolder.visible, true);
     assert.equal(tabFolder.preview, 4);
@@ -204,8 +205,16 @@ async function measureDock() {
       const moreClickable = !more.hidden && tile.width > 0 && tile.left >= bar.left &&
         tile.right <= bar.right && more.contains(hit);
       if (moreClickable) await showAppOverflow(more.previousElementSibling, more);
+      const widgetStrips = [...more.closest('.zone').querySelectorAll('.widget-strip')].map(strip => {
+        const { x, y, width, height } = strip.getBoundingClientRect();
+        const hit = width && document.elementFromPoint(x + width / 2, y + height / 2);
+        const clickable = !!hit && !!hit.closest('button') && strip.contains(hit);
+        strip.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 800 }));
+        return { width, clickable, scrollable: strip.scrollWidth <= strip.clientWidth || strip.scrollLeft > 0 };
+      });
       return { moreClickable, zonesFit: zones.every((z) => z.left >= bar.left && z.right <= bar.right),
-        tileLeft: tile.left, tileRight: tile.right, barRight: bar.right };
+        tileLeft: tile.left, tileRight: tile.right, barRight: bar.right,
+        widgetsReachable: widgetStrips.length > 0 && widgetStrips.every(({ width, clickable, scrollable }) => width >= tile.width - 1 && clickable && scrollable), widgetStrips };
     })()`);
     crowded[mode] = { ...result, opened };
   }

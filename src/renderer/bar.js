@@ -326,14 +326,16 @@ function renderZone(zone, names) {
     if (prev) node = patchNode(prev, node);
     next.set(key, node);
     if (node.className === 'apps') {
+      if (!node.childElementCount) continue;
       if (!appStrips.has(node)) appStrips.set(node, appStrip(node));
       want.push(appStrips.get(node));
     } else want.push(node);
   }
   cache.set(zone, next);
   const groups = groupZoneWidgets(el, want);
-  const appCount = groups.filter((group) => group.className === 'app-strip' && group.firstElementChild.childElementCount).length;
-  if (appCount) el.style.setProperty('--app-zone-min', `calc(${appCount} * var(--app-strip-min) + ${groups.length - 1} * var(--dock-gap))`);
+  const appCount = groups.filter((group) => group.className === 'app-strip').length;
+  if (appCount) el.style.setProperty('--app-zone-min', `calc(${appCount} * var(--app-strip-min) +
+    ${groups.length - appCount} * var(--widget-strip-min, 0px) + ${groups.length - 1} * var(--dock-gap))`);
   reconcileChildren(el, groups);
 }
 function naturalDockWidth(bar, pill) {
@@ -356,13 +358,36 @@ function naturalDockWidth(bar, pill) {
   delete bar.dataset.measuringDock;
   return Math.ceil(w);
 }
+function reserveWidgetSpace(bar, available) {
+  let folders = 0, widgetStrips = 0, widgetZones = 0;
+  let gaps = bar.childElementCount + 1;
+  for (const zone of bar.children) {
+    if (zone.id === 'dock-tabs') { folders++; continue; }
+    const apps = zone.querySelectorAll('.app-strip').length;
+    if (apps) {
+      folders += apps;
+      gaps += zone.childElementCount - 1;
+      widgetStrips += zone.childElementCount - apps;
+    } else if (zone.childElementCount) widgetZones++;
+  }
+  const tracks = widgetStrips + widgetZones;
+  if (!tracks) return;
+
+  const budget = `calc(${available}px - ${folders} * var(--app-strip-min) - ${gaps} * var(--dock-gap))`;
+  const share = `clamp(0px, calc(${budget} / ${tracks}), var(--tile-h))`;
+  const mixed = widgetStrips ? `clamp(${share}, calc((${budget} - ${widgetZones / 2} * ${share}) / ${widgetStrips}), var(--tile-h))` : '0px';
+  bar.style.setProperty('--widget-strip-min', mixed);
+  if (widgetZones) bar.style.setProperty('--widget-zone-min',
+    `clamp(0px, calc((${budget} - ${widgetStrips} * var(--widget-strip-min)) / ${widgetZones}), var(--tile-h))`);
+}
 let lastSentWidth = 0;
 function fitDock() {
   const bar = document.getElementById('bar');
   const pill = OB.settings.layout === 'pill';
-  const natural = naturalDockWidth(bar, pill);
   const body = getComputedStyle(document.body);
   const available = document.body.clientWidth - parseFloat(body.paddingLeft) - parseFloat(body.paddingRight);
+  reserveWidgetSpace(bar, available);
+  const natural = naturalDockWidth(bar, pill);
   bar.toggleAttribute('data-compact-widgets', natural > available);
   updateTabFolder();
   for (const strip of bar.querySelectorAll('.app-strip')) updateAppOverflow(strip);
