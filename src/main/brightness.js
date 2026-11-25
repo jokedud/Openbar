@@ -8,16 +8,18 @@ const SETTINGS = new Map([
   ['display', 'ms-settings:display'],
   ['nightlight', 'ms-settings:nightlight'],
 ]);
-const unavailable = { level: null, failed: false };
+const unavailable = { level: null, levels: [], failed: false };
+const isPercent = (value) => Number.isInteger(value) && value >= 0 && value <= 100;
 
 const probe = `
 $ErrorActionPreference = 'Stop'
-$result = @{ level = $null; failed = $false }
+$result = @{ level = $null; levels = @(); failed = $false }
 try {
   $monitor = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness |
     Where-Object Active | Select-Object -First 1
   if ($null -ne $monitor) {
     $result.level = [int]$monitor.CurrentBrightness
+    $result.levels = @($monitor.Level)
     $method = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods |
       Where-Object { $_.Active -and $_.InstanceName -eq $monitor.InstanceName } | Select-Object -First 1
     if ($null -eq $method) { $result.level = $null }
@@ -48,8 +50,12 @@ async function runBrightness(level, run = execute) {
     const { stdout } = await run(executable, ['-NoProfile', '-NonInteractive', '-EncodedCommand', command], {
       windowsHide: true, timeout: 4500, maxBuffer: 32 * 1024,
     });
-    const { level: actual, failed } = JSON.parse(stdout);
-    if (Number.isInteger(actual) && actual >= 0 && actual <= 100) return { level: actual, failed: failed === true };
+    const { level: actual, levels, failed } = JSON.parse(stdout);
+    if (isPercent(actual)) return {
+      level: actual,
+      levels: Array.isArray(levels) ? [...new Set(levels.filter(isPercent))].sort((a, b) => a - b) : [],
+      failed: failed === true,
+    };
   } catch (_) { /* A missing provider or timed-out request must not look like a working display. */ }
   return level === undefined ? unavailable : { ...unavailable, failed: true };
 }

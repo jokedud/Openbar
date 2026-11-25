@@ -73,10 +73,23 @@ function mountBrightness(body) {
     schedule(pending !== null ? 0 : actual.level !== null ? 4000 : 12000);
   }
 
-  slider.addEventListener('input', () => {
-    pending = slider.valueAsNumber;
+  function queueLevel(level) {
+    pending = level;
     render();
     schedule(120);
+  }
+  slider.addEventListener('input', () => queueLevel(slider.valueAsNumber));
+  slider.addEventListener('keydown', (event) => {
+    const levels = actual.levels;
+    const direction = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1 :
+      event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 0;
+    if (!direction || !levels?.length) return;
+    event.preventDefault();
+    const current = pending ?? applying ?? actual.level;
+    const nearestIndex = levels.reduce((nearest, level, index) =>
+      Math.abs(level - current) < Math.abs(levels[nearest] - current) ? index : nearest, 0);
+    const next = levels[nearestIndex + direction];
+    if (next !== undefined) queueLevel(next);
   });
   const dispose = () => {
     disposed = true;
