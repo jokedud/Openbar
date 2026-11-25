@@ -26,6 +26,16 @@ TITLES.bluetooth = 'Bluetooth';
 W.bluetooth = () => panelBtn('bluetooth', '', icon('bluetooth', 16));
 TITLES.brightness = 'Brightness';
 W.brightness = () => panelBtn('brightness', '', icon('sun'));
+TITLES.notifications = 'Notifications';
+W.notifications = () => {
+  const n = OB.state.notifications;
+  const unread = n?.unread || 0;
+  const badge = unread > 0 ? h('span', { class: 'badge notif-badge' }, unread > 99 ? '99+' : String(unread)) : null;
+  const btn = panelBtn('notifications', unread > 0 ? 'notif-btn has-unread' : 'notif-btn', icon('bell', 16), badge);
+  btn.title = unread > 0 ? `Notifications (${unread} unread)` : 'Notifications';
+  btn.setAttribute('aria-label', btn.title);
+  return btn;
+};
 W.start = () => panelBtn('start', '', icon('grid', 18));
 W.sep = () => h('span', { class: 'sep' });
 W.search = () => h('button', { class: 'w', title: 'Windows search', 'data-sys': 'search' }, icon('search', 16));

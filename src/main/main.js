@@ -15,6 +15,7 @@ const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth'
 const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 const { createBattery, openPowerSettings } = require('./battery');
+const { createNotificationService, hasNotificationsWidget, notificationsLayoutMigration, registerNotificationsIpc } = require('./notifications');
 const { WindowPreviewController } = require('./window-preview');
 const windowPoll = require('./window-poll');
 const { SurfaceInput } = require('./surface-input');
@@ -44,7 +45,7 @@ function refreshVolume(change) {
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 
-let settingsStore, dataStore, devinStore, taskbarRecovery, companion, windowPreview;
+let settingsStore, dataStore, devinStore, taskbarRecovery, companion, windowPreview, notificationService;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
@@ -53,6 +54,7 @@ let batteryNative, batteryEstimate;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
+  notifications: { status: isWin ? 'unavailable' : 'unsupported', items: [], unread: 0, lastSeenAt: 0 },
   errors: {},
 };
 
@@ -563,6 +565,7 @@ const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 4
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
+PANEL_SIZES.notifications = [372, 460];
 
 let panelShowSeq = 0;
 let panelShowTimer = null;
@@ -589,6 +592,7 @@ function togglePanel(widget, anchorX) {
     return;
   }
   const power = widget === 'battery' ? batteryNative?.read() : null;
+  if (widget === 'notifications') notificationService?.refresh(true);
   const [w, preferredH] = power?.present === false ?
     [PANEL_SIZES.battery[0], 266] : PANEL_SIZES[widget] || [360, 420];
   const viewport = bar.getBounds();
@@ -654,7 +658,7 @@ function fitDevinPanel(e, contentHeight) {
 function openSettings(tab) {
   windowPreview?.hide();
   cancelPendingPanelShow();
-  if (panelWidget === 'bluetooth' || panelWidget === 'battery') { panelWidget = null; broadcast('panel', null); }
+  if (panelWidget === 'bluetooth' || panelWidget === 'battery' || panelWidget === 'notifications') { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
   settingsWin = new BrowserWindow({
@@ -803,6 +807,13 @@ function registerDevinIpc() {
 function registerIpc() {
   registerDevinIpc();
   registerBluetoothIpc(ipcMain, shell, (e) => panelWidget === 'bluetooth' && e.sender === panel?.webContents);
+  registerNotificationsIpc(ipcMain, {
+    service: notificationService,
+    shell,
+    win32,
+    isActivePanel: (e) => panelWidget === 'notifications' && e.sender === panel?.webContents,
+    isWin,
+  });
   ipcMain.handle('volume:read', (e) => panelWidget === 'volume' && e.sender === panel?.webContents ? refreshVolume() : VOLUME_UNAVAILABLE);
   ipcMain.handle('volume:change', (e, action, value) => {
     const change = volumeChange(action, value);
@@ -827,13 +838,14 @@ function registerIpc() {
   });
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
-  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); applySettings(prev); return S(); });
+  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); migrateNotificationsLayout(); applySettings(prev); return S(); });
   ipcMain.handle('settings:reset', () => {
     const { configured, orgId } = devinConfigInfo();
     if ((configured || orgId) && saveDevinConfig({}).error) throw new Error('Could not remove the saved Devin key.');
     const prev = JSON.parse(JSON.stringify(S()));
     settingsStore.replace(DEFAULT_SETTINGS);
     migrateBluetoothLayout();
+    migrateNotificationsLayout();
     applySettings(prev);
     return S();
   });
@@ -934,6 +946,11 @@ function migrateBluetoothLayout() {
   if (patch) settingsStore.set(patch);
 }
 
+function migrateNotificationsLayout() {
+  const patch = notificationsLayoutMigration(S());
+  if (patch) settingsStore.set(patch);
+}
+
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
@@ -949,6 +966,18 @@ app.whenReady().then(() => {
     taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
     batteryNative = createBattery();
   }
+  notificationService = createNotificationService({
+    isWin,
+    getPersisted: () => D().notifications,
+    setPersisted: (next) => { dataStore.set({ notifications: next }); },
+    onUpdate: (next) => {
+      state.notifications = next;
+      if (bar && !bar.isDestroyed()) bar.webContents.send('state', { notifications: next });
+      if (panelWidget === 'notifications' && panel && !panel.isDestroyed() && panel.isVisible()) {
+        panel.webContents.send('state', { notifications: next });
+      }
+    },
+  });
   windowPreview = new WindowPreviewController({
     createSurfaceWindow,
     syncBackdrop,
@@ -965,6 +994,7 @@ app.whenReady().then(() => {
   });
   const firstRun = !require('fs').existsSync(settingsStore.file);
   migrateBluetoothLayout();
+  migrateNotificationsLayout();
   const volumeMigration = volumeLayoutMigration(S());
   if (volumeMigration) settingsStore.set(volumeMigration);
   if (firstRun && isWin) {
@@ -990,7 +1020,10 @@ app.whenReady().then(() => {
       if (panelWidget === 'volume' || hasVolumeWidget(S())) refreshVolume();
     }),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
-    every(3000, scheduleTaskbar),
+    every(3000, () => {
+      scheduleTaskbar();
+      if (panelWidget === 'notifications' || hasNotificationsWidget(S())) notificationService?.refresh();
+    }),
     every(10000, refreshBattery),
     every(60 * 1000, refreshers.disk),
     every(15 * 60 * 1000, refreshers.weather),

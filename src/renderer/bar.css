@@ -53,6 +53,18 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 .art { width: calc(var(--tile-h) - 12px); height: calc(var(--tile-h) - 12px); border-radius: 8px; object-fit: cover; }
 .pomo.focus { color: var(--bad); } .pomo.break { color: var(--good); }
 .badge { min-width: 16px; height: 16px; line-height: 16px; text-align: center; font-size: 10px; font-weight: 700; background: var(--bad); color: #fff; border-radius: 8px; padding: 0 5px; }
+.w.notif-btn { position: relative; gap: 6px; }
+.w.notif-btn.has-unread .ic { transform-origin: 50% 15%; }
+.w.notif-btn:hover .ic { animation: bell-swing .45s ease; }
+@keyframes bell-swing {
+  0%, 100% { transform: rotate(0); }
+  22% { transform: rotate(12deg); }
+  48% { transform: rotate(-10deg); }
+  74% { transform: rotate(5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w.notif-btn:hover .ic { animation: none; }
+}
 
 /* Clock: red weekday over the date, then the time. */
 .clock { gap: 12px; padding: 0 12px; }

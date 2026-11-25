@@ -242,6 +242,7 @@ function mainIpc(initialConfig, storedToken = 'cog_test') {
   const context = vm.createContext({
     require: (name) => ({
       path, electron, './bluetooth': require('../src/main/bluetooth'),
+      './notifications': require('../src/main/notifications'),
       './devin': require('../src/main/devin'), './store': { DEFAULT_SETTINGS },
     })[name] || {},
     __dirname, Buffer, settings, credentials, sender, process: { platform: 'test', on() {} },

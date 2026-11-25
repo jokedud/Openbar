@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
   devinOtter: true,
   left: ['start', 'apps'],
   center: [],
-  right: ['media', 'weather', 'system', 'network', 'battery', 'brightness', 'pomodoro', 'todos', 'nextEvent', 'devin', 'clock', 'quick', 'bluetooth', 'volume'],
+  right: ['media', 'weather', 'system', 'network', 'battery', 'brightness', 'pomodoro', 'todos', 'nextEvent', 'devin', 'clock', 'notifications', 'quick', 'bluetooth', 'volume'],
   customTabs: [],
   pinned: [],                  // [{ name, path, args }]
   weather: { city: '', lat: null, lon: null, units: 'celsius' },
@@ -47,6 +47,7 @@ const DEFAULT_DATA = {
   notes: '',
   screenTime: {},              // { 'YYYY-MM-DD': { 'chrome.exe': seconds } }
   pomodoro: { phase: 'idle', endsAt: 0, remainingMs: 0, completedToday: 0, day: '' },
+  notifications: { lastSeenAt: 0, dismissedIds: [] },
   taskbarRestore: null,        // what to restore if we crashed while changing the taskbar
 };
 

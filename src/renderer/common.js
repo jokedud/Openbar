@@ -154,6 +154,7 @@ const ICONS = {
   wifi: '<path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/>',
   battery: '<rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 11v2"/>',
   bluetooth: '<path d="m6 6 12 12-6 4V2l6 4L6 18"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   speaker: '<path d="M3 9h4l5-4v14l-5-4H3z"/><path class="volume-waves" d="M15 9a4.5 4.5 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/><path class="volume-cross" d="m16 10 5 4m0-4-5 4" opacity="0"/>',
