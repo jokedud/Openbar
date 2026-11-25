@@ -118,7 +118,10 @@ function mountNotificationsPanel(body, setHead) {
       'data-notif-id': item.id,
       tabindex: clickable ? '0' : null,
       onclick: clickable ? () => openTarget(item.launchUrl, true) : null,
-      onkeydown: clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTarget(item.launchUrl, true); } } : null,
+      onkeydown: clickable ? (e) => {
+        if (e.target && e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTarget(item.launchUrl, true); }
+      } : null,
     },
       h('div', { class: 'notif-avatar', style: { background: color }, 'aria-hidden': 'true' }, initial),
       h('div', { class: 'notif-body' },

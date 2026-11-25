@@ -306,8 +306,19 @@ test('notifications panel renders cards, marks read on mount, handles dismiss/cl
   const cards = body.findAll((n) => n.attrs?.['data-notif-id'] === '42');
   assert.equal(cards.length, 1);
 
-  // Dismiss button calls notifications:dismiss with item id
+  // Keyboard Enter/Space on the Dismiss button must not trigger the card's link handler
   const dismissBtn = cards[0].findAll((n) => n.className === 'notif-dismiss')[0];
+  let prevented = false;
+  cards[0].listeners.get('keydown')({ key: 'Enter', target: dismissBtn, currentTarget: cards[0], preventDefault() { prevented = true; } });
+  assert.equal(prevented, false);
+  assert.ok(!invoked.some(([ch]) => ch === 'notifications:open'));
+
+  // Keyboard Enter on the card itself opens the launch URL
+  cards[0].listeners.get('keydown')({ key: 'Enter', target: cards[0], currentTarget: cards[0], preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.deepEqual(invoked.at(-1), ['notifications:open', 'https://slack.com']);
+
+  // Dismiss button calls notifications:dismiss with item id
   dismissBtn.listeners.get('click')({ stopPropagation() {} });
   assert.deepEqual(invoked.at(-1), ['notifications:dismiss', '42']);
 
