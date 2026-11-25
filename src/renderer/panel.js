@@ -114,7 +114,7 @@ P.weather = (body) => {
   const c = w.current, deg = '°', [ic, label] = weatherInfo(c.weather_code);
   body.append(h('div', { class: 'card row' }, icon(ic, 40), h('div', { class: 'grow' }, h('div', { class: 'big' }, Math.round(c.temperature_2m) + deg),
     h('div', { class: 'muted' }, `${label} · feels ${Math.round(c.apparent_temperature)}${deg} · ${c.relative_humidity_2m}% humidity · wind ${Math.round(c.wind_speed_10m)}`))));
-  const forecastHour = c.time.slice(0, 13) + ':00';
+  const forecastHour = new Date(Date.now() + w.utc_offset_seconds * 1000).toISOString().slice(0, 13) + ':00';
   const nowIdx = w.hourly.time.findIndex((t) => t >= forecastHour);
   const hours = h('div', { class: 'hours' });
   for (let i = Math.max(0, nowIdx); i < Math.max(0, nowIdx) + 24 && i < w.hourly.time.length; i++) {

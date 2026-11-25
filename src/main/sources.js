@@ -96,7 +96,7 @@ async function weather(cfg) {
     '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,is_day' +
     '&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max' +
     `&timezone=auto&forecast_days=7${unit}`);
-  return { place: loc.name, units: cfg.units, current: j.current, hourly: j.hourly, daily: j.daily, fetchedAt: Date.now() };
+  return { place: loc.name, units: cfg.units, utc_offset_seconds: j.utc_offset_seconds, current: j.current, hourly: j.hourly, daily: j.daily, fetchedAt: Date.now() };
 }
 
 // ---------- GitHub ----------
