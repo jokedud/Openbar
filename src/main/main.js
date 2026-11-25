@@ -228,7 +228,7 @@ function runAutomations() {
     }
     if (a.pauseMusicBeforeMeetings && mins <= a.pauseMinutesBefore && mins > a.pauseMinutesBefore - 1 && !fired.has('p' + ev.id)) {
       fired.add('p' + ev.id);
-      if (mediaPlaying()) win32.sendKey('playpause');
+      if (mediaPlaying()) sources.controlMedia('pause');
     }
   }
   const day = localDay();
@@ -268,7 +268,7 @@ function pomodoroAction(action) {
   if (action === 'start') {
     if (p.phase === 'paused') { p.phase = p.resumePhase || 'focus'; p.endsAt = now + p.remainingMs; }
     else { p.phase = 'focus'; p.endsAt = now + cfg.focusMin * 60000; }
-    if (S().automations.pauseMusicOnPomodoro && mediaPlaying()) win32.sendKey('playpause');
+    if (S().automations.pauseMusicOnPomodoro && mediaPlaying()) sources.controlMedia('pause');
   } else if (action === 'pause' && (p.phase === 'focus' || p.phase === 'break')) {
     p.resumePhase = p.phase; p.remainingMs = Math.max(0, p.endsAt - now); p.phase = 'paused';
   } else if (action === 'reset') {
@@ -441,7 +441,7 @@ function registerIpc() {
   ipcMain.handle('apps:list', (_e, force) => startmenu.listApps(force));
   ipcMain.handle('apps:icon', (_e, file) => startmenu.iconFor(file));
   ipcMain.handle('exe:icon', (_e, file) => exeIcon(file));
-  ipcMain.handle('media', (_e, key) => { if (win32) win32.sendKey(key); });
+  ipcMain.handle('media', (_e, action) => isWin && sources.controlMedia(action));
   ipcMain.handle('system', (_e, action) => { const f = SYSTEM_ACTIONS[action]; if (f) f(); });
   ipcMain.handle('open', (_e, url) => { if (SAFE_URL.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
