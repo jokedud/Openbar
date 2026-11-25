@@ -10,7 +10,9 @@ const WIDGETS = {
   nextEvent: 'Next meeting', weather: 'Weather', system: 'CPU & RAM', network: 'Network speed', battery: 'Battery & power', brightness: 'Brightness', media: 'Now playing', volume: 'Volume',
   pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', github: 'GitHub activity', devin: 'Devin sessions', crypto: 'Crypto prices', screenTime: 'Screen time',
   quick: 'Quick actions', settings: 'Settings button',
-  bluetooth: 'Bluetooth', notifications: 'Notifications',
+  bluetooth: 'Bluetooth',
+  notifications: 'Notifications',
+  trayApps: 'Background apps',
 };
 let tab = new URLSearchParams(location.search).get('tab') || 'general';
 const $ = (id) => document.getElementById(id);
