@@ -17,6 +17,7 @@ const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth'
 const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 const { createBattery, openPowerSettings } = require('./battery');
+const { createNotificationService, hasNotificationsWidget, notificationsLayoutMigration, registerNotificationsIpc } = require('./notifications');
 const { WindowPreviewController } = require('./window-preview');
 const { TrayApps, trayLayoutMigration } = require('./tray-apps');
 const windowPoll = require('./window-poll');
@@ -47,16 +48,18 @@ function refreshVolume(change) {
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 
-let settingsStore, dataStore, devinStore, taskbarRecovery, companion, windowPreview;
+let settingsStore, dataStore, devinStore, taskbarRecovery, companion, windowPreview, notificationService;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
+let overflowItems = [];
 let devinPanelSize = null;
 let devinChat, devinDesktopTarget;
 let batteryNative, batteryEstimate, trayApps;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
+  notifications: { status: isWin ? 'unavailable' : 'unsupported', items: [], unread: 0, lastSeenAt: 0 },
   errors: {},
 };
 
@@ -175,7 +178,7 @@ function syncBackdrop(win) {
   const backdrop = backdrops.get(win);
   if (!backdrop) return;
   const { window, hwnd, surface } = backdrop;
-  if (glassMode === 'off' || !surface || !win.isVisible()) {
+  if (glassMode === 'off' || !surface || !win.isVisible() || (win === panel && panelPendingBounds)) {
     backdrop.lastSync = null;
     if (window.isVisible()) window.hide();
     return;
@@ -569,37 +572,54 @@ const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 4
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
+PANEL_SIZES.notifications = [372, 460];
 PANEL_SIZES.trayApps = [328, 320];
+PANEL_SIZES.overflow = [352, 440];
+PANEL_SIZES.tabOverflow = PANEL_SIZES.overflow;
+const isFolderPanel = (widget) => widget === 'overflow' || widget === 'tabOverflow';
 
 let panelShowSeq = 0;
 let panelShowTimer = null;
+let panelPendingBounds = null;
 function cancelPendingPanelShow() {
   panelShowSeq++;
+  panelPendingBounds = null;
   if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
 }
 function showPanel(seq) {
   if (seq !== panelShowSeq || !panel || panel.isDestroyed() || !panelWidget) return;
   if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
+  const target = panelPendingBounds;
+  panelPendingBounds = null;
+  if (target) panel.setBounds(target);
   if (!panel.isVisible()) panel.show();
   panel.focus();
   syncBackdrop(panel);
 }
 
-function togglePanel(widget, anchorX) {
+function closePanel() {
+  cancelPendingPanelShow();
+  if (panel && !panel.isDestroyed()) panel.hide();
+  panelWidget = null;
+  broadcast('panel', null);
+}
+
+function togglePanel(widget, anchorX, items) {
   windowPreview?.hide();
   if (panelWidget === 'devin' && widget !== 'devin' && devinChat?.busy) devinChat.stop();
   if (widget === 'devin' && isWin) rememberDevinDesktopTarget();
   if (panelWidget === 'battery') stopBatteryEstimate();
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) {
-    cancelPendingPanelShow();
-    panel.hide();
-    panelWidget = null;
-    broadcast('panel', null);
+    closePanel();
     return;
   }
   const power = widget === 'battery' ? batteryNative?.read() : null;
-  const [w, preferredH] = power?.present === false ?
+  if (widget === 'notifications') notificationService?.refresh(true);
+  const [w, maxH] = power?.present === false ?
     [PANEL_SIZES.battery[0], 266] : PANEL_SIZES[widget] || [360, 420];
+  overflowItems = isFolderPanel(widget) ? items : [];
+  const preferredH = isFolderPanel(widget) ? Math.min(maxH, 60 + 76 * Math.ceil(items.length / 3) +
+    (widget === 'overflow' && items.some(({ hwnds }) => hwnds.length > 1) ? 152 : 0)) : maxH;
   const viewport = bar.getBounds();
   const bb = padBounds(viewport, -barShadowPadding());
   const db = screen.getDisplayMatching(bb).bounds;
@@ -622,7 +642,7 @@ function togglePanel(widget, anchorX) {
     panel.on('blur', () => {
       if (panelWidget === 'devin' && devinChat?.busy) { rememberDevinDesktopTarget(); return; }
       if (panelWidget === 'trayApps' && trayApps?.busy) return;
-      if (panel && panel.isVisible() && !panel.webContents.isDevToolsOpened()) {
+      if (panel && panel.isVisible() && !panelPendingBounds && !panel.webContents.isDevToolsOpened()) {
         cancelPendingPanelShow();
         panel.hide();
         panelWidget = null;
@@ -641,9 +661,12 @@ function togglePanel(widget, anchorX) {
     if (panel.isVisible()) panel.hide();
     const backdrop = backdrops.get(panel);
     if (backdrop) { backdrop.surface = null; backdrop.lastSync = null; }
-    panel.setBounds(bounds);
+    panelPendingBounds = bounds;
+    const minX = Math.min(0, ...screen.getAllDisplays().map((d) => d.bounds.x));
+    panel.setBounds({ x: minX - bounds.width - 200, y: bounds.y, width: bounds.width, height: bounds.height });
     panelWidget = widget;
     broadcast('panel', widget);
+    panel.showInactive();
     panel.webContents.send('panel:widget', widget, seq);
     panelShowTimer = setTimeout(() => showPanel(seq), 120);
     return;
@@ -659,6 +682,7 @@ function fitDevinPanel(e, contentHeight) {
   const height = Math.min(Math.ceil(contentHeight), devinPanelSize.maxHeight) + 2 * SHADOW_PADDING;
   if (height === bounds.height) return;
   const y = devinPanelSize.atTop ? bounds.y : bounds.y + bounds.height - height;
+  if (panelPendingBounds) panelPendingBounds = { ...panelPendingBounds, y, height };
   panel.setBounds({ ...bounds, y, height });
   syncBackdrop(panel);
 }
@@ -666,7 +690,7 @@ function fitDevinPanel(e, contentHeight) {
 function openSettings(tab) {
   windowPreview?.hide();
   cancelPendingPanelShow();
-  if (panelWidget === 'bluetooth' || panelWidget === 'battery') { panelWidget = null; broadcast('panel', null); }
+  if (['bluetooth', 'battery', 'notifications'].includes(panelWidget) || isFolderPanel(panelWidget)) { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
   settingsWin = new BrowserWindow({
@@ -848,6 +872,13 @@ function registerDevinIpc() {
 function registerIpc() {
   registerDevinIpc();
   registerBluetoothIpc(ipcMain, shell, (e) => panelWidget === 'bluetooth' && e.sender === panel?.webContents);
+  registerNotificationsIpc(ipcMain, {
+    service: notificationService,
+    shell,
+    win32,
+    isActivePanel: (e) => panelWidget === 'notifications' && e.sender === panel?.webContents,
+    isWin,
+  });
   ipcMain.handle('volume:read', (e) => panelWidget === 'volume' && e.sender === panel?.webContents ? refreshVolume() : VOLUME_UNAVAILABLE);
   ipcMain.handle('volume:change', (e, action, value) => {
     const change = volumeChange(action, value);
@@ -872,13 +903,14 @@ function registerIpc() {
   });
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
-  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); applySettings(prev); return S(); });
+  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); migrateNotificationsLayout(); applySettings(prev); return S(); });
   ipcMain.handle('settings:reset', () => {
     const { configured, orgId } = devinConfigInfo();
     if ((configured || orgId) && saveDevinConfig({}).error) throw new Error('Could not remove the saved Devin key.');
     const prev = JSON.parse(JSON.stringify(S()));
     settingsStore.replace(DEFAULT_SETTINGS);
     migrateBluetoothLayout();
+    migrateNotificationsLayout();
     applySettings(prev);
     return S();
   });
@@ -928,6 +960,18 @@ function registerIpc() {
   ipcMain.handle('wifi:status', (e) => fromNetworkPanel(e) ? networkControls().status() : null);
   ipcMain.handle('wifi:set-radio', (e, enabled) => fromNetworkPanel(e) && networkControls().setRadio(enabled));
   ipcMain.handle('wifi:open', (e, target) => fromNetworkPanel(e) && networkControls().open(target));
+  ipcMain.handle('panel:toggle', (e, widget, x, items) => {
+    if (isFolderPanel(widget) && (e.sender !== bar?.webContents || !Array.isArray(items) || !items.length)) return;
+    togglePanel(widget, x, items);
+  });
+  ipcMain.handle('panel:overflow', (e, widget) => isFolderPanel(widget) && widget === panelWidget &&
+    e.sender === panel?.webContents ? overflowItems : []);
+  ipcMain.handle('panel:select-tab', (e, id) => {
+    if (panelWidget !== 'tabOverflow' || e.sender !== panel?.webContents ||
+        !overflowItems.some((item) => item.id === id) || (id !== '' && !S().customTabs.some((tab) => tab.id === id))) return;
+    closePanel();
+    if (bar && !bar.isDestroyed()) bar.webContents.send('bar:select-tab', id);
+  });
   const fromTrayPanel = (e) => isWin && panelWidget === 'trayApps' && e.sender === panel?.webContents;
   ipcMain.handle('tray-apps:list', async (e) => {
     if (!fromTrayPanel(e) || trayApps.busy) return null;
@@ -959,9 +1003,8 @@ function registerIpc() {
     } else if (hidden) showPanel(seq);
     return success;
   });
-  ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
-  ipcMain.handle('panel:close', () => { cancelPendingPanelShow(); if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
+  ipcMain.handle('panel:close', closePanel);
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));
   ipcMain.handle('bar:width', (_e, w) => { if (Math.abs(w - lastContentWidth) > 2) { lastContentWidth = w; if (S().layout === 'pill') layoutBar(); } });
   ipcMain.handle('pomodoro', (_e, action) => pomodoroAction(action));
@@ -1011,6 +1054,11 @@ function migrateBluetoothLayout() {
   if (patch) settingsStore.set(patch);
 }
 
+function migrateNotificationsLayout() {
+  const patch = notificationsLayoutMigration(S());
+  if (patch) settingsStore.set(patch);
+}
+
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
@@ -1027,6 +1075,18 @@ app.whenReady().then(() => {
     batteryNative = createBattery();
     trayApps = new TrayApps(undefined, exeIcon);
   }
+  notificationService = createNotificationService({
+    isWin,
+    getPersisted: () => D().notifications,
+    setPersisted: (next) => { dataStore.set({ notifications: next }); },
+    onUpdate: (next) => {
+      state.notifications = next;
+      if (bar && !bar.isDestroyed()) bar.webContents.send('state', { notifications: next });
+      if (panelWidget === 'notifications' && panel && !panel.isDestroyed() && panel.isVisible()) {
+        panel.webContents.send('state', { notifications: next });
+      }
+    },
+  });
   windowPreview = new WindowPreviewController({
     createSurfaceWindow,
     syncBackdrop,
@@ -1044,6 +1104,7 @@ app.whenReady().then(() => {
   });
   const firstRun = !require('fs').existsSync(settingsStore.file);
   migrateBluetoothLayout();
+  migrateNotificationsLayout();
   const volumeMigration = volumeLayoutMigration(S());
   if (volumeMigration) settingsStore.set(volumeMigration);
   const trayMigration = trayApps && trayLayoutMigration(S());
@@ -1071,7 +1132,10 @@ app.whenReady().then(() => {
       if (panelWidget === 'volume' || hasVolumeWidget(S())) refreshVolume();
     }),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
-    every(3000, scheduleTaskbar),
+    every(3000, () => {
+      scheduleTaskbar();
+      if (panelWidget === 'notifications' || hasNotificationsWidget(S())) notificationService?.refresh();
+    }),
     every(10000, refreshBattery),
     every(60 * 1000, refreshers.disk),
     every(15 * 60 * 1000, refreshers.weather),

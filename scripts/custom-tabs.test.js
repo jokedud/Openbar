@@ -6,25 +6,27 @@ const test = require('node:test');
 const { runInNewContext } = require('node:vm');
 const { normalizeCustomTabs, shortcutTarget } = require('../src/main/custom-tabs');
 
-test('scrolls crowded full-width Home apps with or without the tab switcher', () => {
+test('scrolls crowded Home zones in both layouts, with or without the tab switcher', () => {
   let onWheel;
   let prevented = 0;
   const tabSwitcher = { isConnected: true };
   const left = {
-    scrollLeft: 0, scrollWidth: 600, clientWidth: 400,
-    addEventListener(type, handler, options) {
-      assert.equal(type, 'wheel');
-      assert.equal(options.passive, false);
-      onWheel = handler;
-    },
+    id: 'left', scrollLeft: 0, scrollWidth: 600, clientWidth: 400, classList: { contains: () => false },
   };
   const settings = { layout: 'full' };
   runInNewContext(readFileSync(path.join(__dirname, '../src/renderer/bar-tabs.js'), 'utf8'), {
     h: () => tabSwitcher,
-    document: { getElementById: () => left },
+    document: {
+      getElementById: () => left,
+      addEventListener(type, handler, options) {
+        assert.equal(type, 'wheel');
+        assert.equal(options.passive, false);
+        onWheel = handler;
+      },
+    },
     OB: { settings },
   });
-  const wheel = { deltaX: 0, deltaY: 80, deltaMode: 0, preventDefault: () => prevented++ };
+  const wheel = { target: { closest: () => left }, deltaX: 0, deltaY: 80, deltaMode: 0, preventDefault: () => prevented++ };
   onWheel(wheel);
   assert.equal(left.scrollLeft, 80);
   onWheel({ ...wheel, deltaX: 25 });
@@ -37,8 +39,8 @@ test('scrolls crowded full-width Home apps with or without the tab switcher', ()
   assert.equal(prevented, 2);
   settings.layout = 'pill';
   onWheel(wheel);
-  assert.equal(left.scrollLeft, 160);
-  assert.equal(prevented, 2);
+  assert.equal(left.scrollLeft, 240);
+  assert.equal(prevented, 3);
 });
 
 test('normalizes persisted tabs without altering tab or item order', () => {

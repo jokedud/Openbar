@@ -6,6 +6,8 @@ const P = {};
 const stable = new Set(['start', 'todos', 'notes', 'devin', 'bluetooth']); // panels with local state: don't rebuild on every tick
 let networkPanel;
 function disposeNetworkPanel() { networkPanel?.dispose(); networkPanel = null; }
+let stopNotificationsPanel;
+function unmountNotificationsPanel() { stopNotificationsPanel?.(); stopNotificationsPanel = null; }
 
 function syncHandlers(prev, next) {
   if (!prev._obOn && !next._obOn) return;
@@ -434,6 +436,59 @@ function unmountVolumePanel() {
   stopVolumePanel = null;
 }
 
+function overflowIcon(src, fallback) {
+  return h('span', { class: 'overflow-icon', 'aria-hidden': 'true' },
+    src ? h('img', { src, alt: '' }) : fallback || icon('desktop', 22));
+}
+
+function overflowButton(className, label, image, onclick) {
+  return h('button', { class: className, title: label, onclick }, image, h('span', { class: 'ellipsis' }, label));
+}
+
+function overflowApp(className, label, src, channel, ...args) {
+  return overflowButton(className, label, overflowIcon(src), async () => {
+    await api.invoke('panel:close');
+    return api.invoke(channel, ...args);
+  });
+}
+
+async function drawOverflow() {
+  const drawing = widget;
+  const items = await api.invoke('panel:overflow', drawing);
+  if (widget !== drawing) return;
+  const grid = h('div', { class: 'overflow-grid' });
+  if (drawing === 'tabOverflow') {
+    const tabs = new Map(OB.settings.customTabs.map((tab) => [tab.id, tab.name]));
+    tabs.set('', 'Default widgets');
+    for (const { id } of items) {
+      const label = tabs.get(id);
+      if (!label) continue;
+      const image = overflowIcon(null, id ? h('span', { class: 'overflow-initial' }, label[0]) : icon('windows', 22));
+      grid.append(overflowButton('overflow-cell', label, image, () => api.invoke('panel:select-tab', id)));
+    }
+    setHead('More tabs');
+    $('body').replaceChildren(grid.childElementCount ? grid : empty('No more tabs'));
+    return;
+  }
+  const windows = new Map((OB.state.windows || []).map((w) => [w.hwnd, w]));
+  for (const { label, icon: src, hwnds, pin } of items) {
+    const running = hwnds.map((hwnd) => windows.get(hwnd)).filter(Boolean);
+    const entry = (w, className) => overflowApp(className, w.title, w.icon || src, 'win:action', w.hwnd, 'focus');
+    if (running.length > 1) {
+      const name = pin?.name || running[0].exe.replace(/\.exe$/i, '');
+      grid.append(h('details', { class: 'overflow-group', 'aria-label': label },
+        h('summary', { class: 'overflow-cell', title: label }, overflowIcon(src),
+          h('span', { class: 'ellipsis' }, name), h('span', { class: 'overflow-count' }, running.length)),
+        h('div', { class: 'overflow-nested' }, running.map((w) => entry(w, 'overflow-row')))));
+    } else if (running.length) grid.append(entry(running[0], 'overflow-cell'));
+    else if (pin) grid.append(overflowApp('overflow-cell', pin.name, src, 'launch', pin));
+  }
+  setHead('More apps');
+  $('body').replaceChildren(grid.childElementCount ? grid : empty('No more apps'));
+}
+
+const isFolderPanel = (name) => name === 'overflow' || name === 'tabOverflow';
+
 let enterBodyTimer = null;
 function clearEnterBody() {
   if (enterBodyTimer) { clearTimeout(enterBodyTimer); enterBodyTimer = null; }
@@ -445,6 +500,13 @@ function animateIn() {
   devinSizeObserver = null;
   clearEnterBody();
   el.dataset.widget = widget || '';
+  if (isFolderPanel(widget)) {
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-labelledby', 'title');
+  } else {
+    el.removeAttribute('role');
+    el.removeAttribute('aria-labelledby');
+  }
   el.classList.remove('enter');
   if (widget === 'devin') {
     const header = el.firstElementChild;
@@ -494,6 +556,7 @@ function shouldRedraw(kind, patch) {
   return false;
 }
 async function draw(force) {
+  if (isFolderPanel(widget)) return force === 'switch' ? drawOverflow() : undefined;
   if (widget === 'network' && force !== 'switch') return;
   if (widget === 'trayApps') {
     if (force !== 'switch') return;
@@ -509,6 +572,13 @@ async function draw(force) {
     setHead('Volume');
     $('body').replaceChildren();
     stopVolumePanel = mountVolumePanel($('body'));
+    return;
+  }
+  if (widget === 'notifications') {
+    if (force !== 'switch') return;
+    unmountNotificationsPanel();
+    $('body').replaceChildren();
+    stopNotificationsPanel = mountNotificationsPanel($('body'), setHead);
     return;
   }
   if (stable.has(widget) && (!force || (['devin', 'bluetooth'].includes(widget) && force !== 'switch'))) return;
@@ -545,12 +615,21 @@ OB.init().then(() => {
     disposeNetworkPanel();
     unmountVolumePanel();
     unmountBatteryPanel();
+    unmountNotificationsPanel();
     widget = w; query = ''; sel = 0;
     draw('switch').then(() => {
       if (widget !== w) return;
       animateIn();
       surfaceSync.syncBounds();
-      if (seq != null) api.send('panel:ready', seq);
+      if (seq != null) {
+        let sent = false;
+        const notify = () => { if (sent || widget !== w) return; sent = true; api.send('panel:ready', seq); };
+        if (document.hidden || typeof requestAnimationFrame !== 'function') setTimeout(notify, 0);
+        else {
+          requestAnimationFrame(() => requestAnimationFrame(notify));
+          setTimeout(notify, 60);
+        }
+      }
     });
   });
   api.on('panel', (w) => {
@@ -558,6 +637,7 @@ OB.init().then(() => {
     if (w !== 'brightness') clearBrightness();
     if (w !== 'network') disposeNetworkPanel();
     if (w !== 'battery') unmountBatteryPanel();
+    if (w !== 'notifications') unmountNotificationsPanel();
     if (!w) { clearEnterBody(); $('panel').classList.remove('enter'); }
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
