@@ -1,0 +1,157 @@
+html, body { background: transparent; height: 100%; overflow: hidden; user-select: none; }
+body { padding: var(--surface-padding); }
+
+#preview {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  background: var(--panel-bg);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--panel-rim), inset 0 1px 0 rgba(255,255,255,.08), var(--surface-shadow);
+}
+#preview.enter { animation: preview-pop .2s cubic-bezier(.32,.72,0,1); transform-origin: 50% 100%; }
+[data-position="top"] #preview.enter { animation-name: preview-popdown; transform-origin: 50% 0; }
+@keyframes preview-pop { from { opacity: 0; transform: translateY(6px) scale(.97); } }
+@keyframes preview-popdown { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+
+.preview-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  height: 100%;
+}
+
+.preview-card {
+  width: 224px;
+  height: 170px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+  border-radius: 13px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--card-line);
+  transition: background-color .14s ease-out, box-shadow .14s ease-out;
+  cursor: pointer;
+}
+.preview-card:hover {
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--panel-rim);
+}
+.preview-card.active {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 68%, transparent), 0 0 0 1px var(--card-line);
+}
+.preview-card.minimized .preview-title { color: var(--muted); }
+
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 22px;
+  min-width: 0;
+}
+.preview-icon, .preview-ph {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+}
+.preview-icon { object-fit: contain; }
+.preview-ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--active);
+  color: var(--fg);
+}
+.preview-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preview-tag {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--muted);
+}
+.preview-close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  opacity: .55;
+  transition: background-color .12s ease-out, color .12s ease-out, opacity .12s ease-out;
+  cursor: pointer;
+}
+.preview-card:hover .preview-close,
+.preview-row:hover .preview-close,
+.preview-close:focus-visible { opacity: 1; }
+.preview-close:hover {
+  background: var(--bad);
+  color: #fff;
+  opacity: 1;
+}
+
+.preview-thumb {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .24);
+  box-shadow: inset 0 0 0 1px var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+[data-style="white"] .preview-thumb,
+[data-style="ios"] .preview-thumb {
+  background: rgba(0, 0, 0, .06);
+}
+.preview-fallback {
+  width: 34px;
+  height: 34px;
+  opacity: .35;
+  object-fit: contain;
+  pointer-events: none;
+}
+.preview-card.live .preview-fallback { opacity: .12; }
+
+/* Compact vertical list fallback when an app has too many windows to fit horizontally. */
+#preview.compact .preview-strip {
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.preview-row {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 10px;
+  transition: background-color .12s ease-out;
+  cursor: pointer;
+}
+.preview-row:hover { background: var(--hover); }
+.preview-row.active { background: var(--card); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.preview-row.minimized .preview-title { color: var(--muted); }
