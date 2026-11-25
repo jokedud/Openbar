@@ -87,6 +87,7 @@ test('readWindowsNotifications parses Windows wpndatabase.db toast rows, filters
     title: 'New message from Alex',
     body: 'Ready for the demo?',
     arrivalMs: now - 10_000,
+    expiryMs: 0,
     launchUrl: 'https://app.slack.com/client',
   });
   assert.deepEqual(result.items[1], {
@@ -96,6 +97,7 @@ test('readWindowsNotifications parses Windows wpndatabase.db toast rows, filters
     title: 'Startup & Apps',
     body: 'Docker <v4> runs at login.',
     arrivalMs: now - 60_000,
+    expiryMs: now + 86_400_000,
     launchUrl: 'ms-settings:startupapps',
   });
   // Non-allowlisted custom protocol should not become a launchUrl
@@ -161,6 +163,26 @@ test('notification service tracks unread counts, markAllRead, dismiss, clearAll,
   const manyIds = Array.from({ length: MAX_DISMISSED_IDS + 25 }, (_, i) => String(i));
   const capped = buildNotificationState({ status: 'ready', items: [] }, { lastSeenAt: 0, dismissedIds: manyIds });
   assert.equal(capped.status, 'ready');
+
+  // Expiring an unread toast without a DB write drops it on the next non-forced refresh
+  let expiryClock = 1_760_000_000_000;
+  const expiryDb = createTempWpnDb(t, (db) => {
+    db.prepare('INSERT INTO NotificationHandler (RecordId, PrimaryId) VALUES (?, ?)').run(1, 'xyz.openbar.app');
+    const insert = db.prepare('INSERT INTO Notification (Id, HandlerId, Type, ArrivalTime, ExpiryTime, Payload) VALUES (?, ?, ?, ?, ?, ?)');
+    insert.run(1, 1, 'toast', toFiletime(expiryClock - 10_000), toFiletime(expiryClock + 5_000), Buffer.from('<toast><visual><binding><text>Expiring</text></binding></visual></toast>'));
+    insert.run(2, 1, 'toast', toFiletime(expiryClock - 5_000), 0n, Buffer.from('<toast><visual><binding><text>Persistent</text></binding></visual></toast>'));
+  });
+  const expService = createNotificationService({
+    isWin: true,
+    dbPath: expiryDb,
+    getPersisted: () => ({ lastSeenAt: 0, dismissedIds: [] }),
+    now: () => expiryClock,
+  });
+  assert.equal(expService.refresh(true).unread, 2);
+  expiryClock += 10_000;
+  const afterExpiry = expService.refresh(false);
+  assert.equal(afterExpiry.unread, 1);
+  assert.deepEqual(afterExpiry.items.map((i) => i.id), ['2']);
 });
 
 test('notifications layout migration preserves custom layouts and detects custom tabs', () => {

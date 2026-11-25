@@ -187,6 +187,7 @@ function readWindowsNotifications({ dbPath = defaultDbPath(), now = Date.now(), 
         title: parsed.title,
         body: parsed.body,
         arrivalMs,
+        expiryMs: expiryMs > 0 ? expiryMs : 0,
         launchUrl: parsed.launchUrl,
       });
     }
@@ -206,7 +207,7 @@ function normalizePersistedState(raw) {
   return { lastSeenAt, dismissedIds };
 }
 
-function buildNotificationState(rawResult, persisted) {
+function buildNotificationState(rawResult, persisted, currentNow = Date.now()) {
   const { lastSeenAt, dismissedIds } = normalizePersistedState(persisted);
   if (!rawResult || rawResult.status !== 'ready') {
     return {
@@ -218,7 +219,7 @@ function buildNotificationState(rawResult, persisted) {
   }
   const dismissed = new Set(dismissedIds);
   const items = rawResult.items
-    .filter((item) => !dismissed.has(item.id))
+    .filter((item) => !dismissed.has(item.id) && !(item.expiryMs > 0 && item.expiryMs <= currentNow))
     .map((item) => ({
       ...item,
       unread: item.arrivalMs > lastSeenAt,
@@ -261,7 +262,7 @@ function createNotificationService({
 } = {}) {
   let lastSig = null;
   let lastRaw = isWin ? { status: 'unavailable', items: [] } : { status: 'unsupported', items: [] };
-  let current = buildNotificationState(lastRaw, getPersisted?.());
+  let current = buildNotificationState(lastRaw, getPersisted?.(), now());
 
   function emitIfChanged(next) {
     const prevKey = JSON.stringify(current);
@@ -272,22 +273,24 @@ function createNotificationService({
   }
 
   function refresh(force = false) {
-    if (!isWin) return emitIfChanged(buildNotificationState({ status: 'unsupported', items: [] }, getPersisted?.()));
+    const currentNow = now();
+    if (!isWin) return emitIfChanged(buildNotificationState({ status: 'unsupported', items: [] }, getPersisted?.(), currentNow));
     const sig = dbSignature(dbPath);
     if (force || sig !== lastSig) {
       lastSig = sig;
-      lastRaw = sig ? reader({ dbPath, now: now() }) : { status: 'unavailable', items: [] };
+      lastRaw = sig ? reader({ dbPath, now: currentNow }) : { status: 'unavailable', items: [] };
     }
-    return emitIfChanged(buildNotificationState(lastRaw, getPersisted?.()));
+    return emitIfChanged(buildNotificationState(lastRaw, getPersisted?.(), currentNow));
   }
 
   function markAllRead() {
+    const currentNow = now();
     const persisted = normalizePersistedState(getPersisted?.());
     const maxArrival = lastRaw.items.reduce((m, item) => Math.max(m, item.arrivalMs || 0), 0);
-    const nextSeen = Math.max(persisted.lastSeenAt, now(), maxArrival);
+    const nextSeen = Math.max(persisted.lastSeenAt, currentNow, maxArrival);
     const updated = { ...persisted, lastSeenAt: nextSeen };
     setPersisted?.(updated);
-    return emitIfChanged(buildNotificationState(lastRaw, updated));
+    return emitIfChanged(buildNotificationState(lastRaw, updated, currentNow));
   }
 
   function dismiss(id) {
@@ -296,17 +299,18 @@ function createNotificationService({
     const dismissedIds = [...new Set([...persisted.dismissedIds, id])].slice(-MAX_DISMISSED_IDS);
     const updated = { ...persisted, dismissedIds };
     setPersisted?.(updated);
-    return emitIfChanged(buildNotificationState(lastRaw, updated));
+    return emitIfChanged(buildNotificationState(lastRaw, updated, now()));
   }
 
   function clearAll() {
+    const currentNow = now();
     const persisted = normalizePersistedState(getPersisted?.());
     const visibleIds = current.items.map((item) => item.id);
     const dismissedIds = [...new Set([...persisted.dismissedIds, ...visibleIds])].slice(-MAX_DISMISSED_IDS);
     const maxArrival = lastRaw.items.reduce((m, item) => Math.max(m, item.arrivalMs || 0), 0);
-    const updated = { lastSeenAt: Math.max(persisted.lastSeenAt, now(), maxArrival), dismissedIds };
+    const updated = { lastSeenAt: Math.max(persisted.lastSeenAt, currentNow, maxArrival), dismissedIds };
     setPersisted?.(updated);
-    return emitIfChanged(buildNotificationState(lastRaw, updated));
+    return emitIfChanged(buildNotificationState(lastRaw, updated, currentNow));
   }
 
   return {
