@@ -14,12 +14,14 @@ test('window polls retain dock order when Windows changes the Z-order', async ()
     whenReady: () => new Promise(() => {}),
     getAppMetrics: () => [],
   };
-  const win32 = {
-    listTaskbarWindows: () => zOrder.map((hwnd) => ({ hwnd, pid: hwnd, cls: hwnd % 2 ? 'notepad' : 'wordpad', title: String(hwnd) })),
-    processPath: () => '',
-    foregroundWindow: () => zOrder[0],
+  let newTitle = '';
+  const windowPoll = {
+    poll: async () => ({
+      windows: zOrder.map((hwnd) => ({ hwnd, pid: hwnd, cls: hwnd % 2 ? 'notepad' : 'wordpad', title: newTitle || String(hwnd) })),
+      active: zOrder[0],
+    }),
   };
-  const modules = { path, electron: { app, powerMonitor: { getSystemIdleTime: () => 200 } }, './win32': win32 };
+  const modules = { path, electron: { app, powerMonitor: { getSystemIdleTime: () => 200 } }, './window-poll': windowPoll };
   const context = vm.createContext({
     require: (name) => modules[name] || {},
     __dirname,
@@ -36,6 +38,9 @@ test('window polls retain dock order when Windows changes the Z-order', async ()
   assert.equal(vm.runInContext('state.activeHwnd', context), 3);
   zOrder = [4, 3, 1];
   assert.deepEqual(await poll(), [1, 3, 4]);
+  newTitle = 'renamed';
+  await poll();
+  assert.equal(vm.runInContext('state.windows[0].title', context), 'renamed');
 
   const actions = [];
   const renderer = vm.createContext({
