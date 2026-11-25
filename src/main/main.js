@@ -6,9 +6,11 @@ const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
 const { shortcutTarget } = require('./custom-tabs');
 const TaskbarRecovery = require('./taskbar-recovery');
 const sources = require('./sources');
+const { registerBrightnessIpc } = require('./brightness');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
+const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth');
 const { createBattery, openPowerSettings } = require('./battery');
 
 const isWin = process.platform === 'win32';
@@ -58,7 +60,7 @@ function reserveSpace() {
   const d = screen.getPrimaryDisplay();
   if (!s.reserveSpace) { win32.appBarRemove(barHwnd); appBarRegistered = false; return; }
   if (!appBarRegistered) appBarRegistered = win32.appBarRegister(barHwnd);
-  const thickness = s.height + 2 * s.margin;
+  const thickness = s.height + s.margin;
   const dip = { x: d.bounds.x, y: s.position === 'top' ? d.bounds.y : d.bounds.y + d.bounds.height - thickness, width: d.bounds.width, height: thickness };
   const px = screen.dipToScreenRect(null, dip);
   const rc = win32.appBarSetPos(barHwnd, s.position, { left: px.x, top: px.y, right: px.x + px.width, bottom: px.y + px.height });
@@ -71,8 +73,11 @@ function layoutBar() {
   if (!bar) return;
   const b = barBounds(lastContentWidth);
   const reserved = reserveSpace();
-  // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
-  if (reserved && reserved.height > 0) b.y = reserved.y;
+  // Align the visible dock edge to the work area after Windows positions the strip.
+  if (reserved && reserved.height > 0) {
+    const { margin, position } = S();
+    b.y = position === 'top' ? reserved.y + reserved.height - b.height + margin : reserved.y - margin;
+  }
   bar.setBounds(padBounds(b, barShadowPadding()));
   syncBackdrop(bar);
   bar.setAlwaysOnTop(true, 'screen-saver');
@@ -473,6 +478,9 @@ function createBar() {
 }
 
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [344, 326], quick: [320, 320], start: [520, 560] };
+PANEL_SIZES.bluetooth = [330, 294];
+PANEL_SIZES.brightness = [336, 270];
+
 function togglePanel(widget, anchorX) {
   if (panelWidget === 'battery') stopBatteryEstimate();
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
@@ -524,10 +532,7 @@ function fitDevinPanel(e, contentHeight) {
 }
 
 function openSettings(tab) {
-  if (panelWidget === 'battery') {
-    panelWidget = null;
-    broadcast('panel', null);
-  }
+  if (panelWidget === 'bluetooth' || panelWidget === 'battery') { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
   settingsWin = new BrowserWindow({
@@ -671,6 +676,7 @@ function registerDevinIpc() {
 
 function registerIpc() {
   registerDevinIpc();
+  registerBluetoothIpc(ipcMain, shell, (e) => panelWidget === 'bluetooth' && e.sender === panel?.webContents);
   const batteryPanel = (e) => panelWidget === 'battery' && e.sender === panel?.webContents;
   ipcMain.handle('battery:details', (e) => batteryPanel(e) && batteryNative ?
     { ...batteryNative.read(), mode: batteryNative.mode() } : null);
@@ -689,12 +695,13 @@ function registerIpc() {
   });
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
-  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); applySettings(prev); return S(); });
+  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); applySettings(prev); return S(); });
   ipcMain.handle('settings:reset', () => {
     const { configured, orgId } = devinConfigInfo();
     if ((configured || orgId) && saveDevinConfig({}).error) throw new Error('Could not remove the saved Devin key.');
     const prev = JSON.parse(JSON.stringify(S()));
     settingsStore.replace(DEFAULT_SETTINGS);
+    migrateBluetoothLayout();
     applySettings(prev);
     return S();
   });
@@ -767,6 +774,11 @@ function registerIpc() {
 const stoppers = [];
 app.on('second-instance', () => openSettings());
 
+function migrateBluetoothLayout() {
+  const patch = bluetoothLayoutMigration(S());
+  if (patch) settingsStore.set(patch);
+}
+
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
@@ -776,6 +788,7 @@ app.whenReady().then(() => {
     batteryNative = createBattery();
   }
   const firstRun = !require('fs').existsSync(settingsStore.file);
+  migrateBluetoothLayout();
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
       { name: 'File Explorer', path: path.join(process.env.SystemRoot || 'C:/Windows', 'explorer.exe') },
@@ -784,6 +797,8 @@ app.whenReady().then(() => {
     settingsStore.save(true);
   }
   if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
+  registerBrightnessIpc(ipcMain, shell, (e) =>
+    panelWidget === 'brightness' && panel && !panel.isDestroyed() && e.sender === panel.webContents, isWin);
   registerIpc();
   if (isWin) registerSurfaceIpc();
   createBar();
