@@ -52,9 +52,10 @@ test('idle cycles repeat and the elevator opens, takes the otter inside, closes 
   assert.deepEqual(idleFrame(176), idleFrame(0));
   assert.equal(elevatorFrame(0).depth, 24);
   assert.equal(elevatorFrame(6).gap, 8);
-  assert.equal(elevatorFrame(6).walk, 0);
+  assert.equal(elevatorFrame(0).walk, 0);
+  assert.ok(elevatorFrame(6).walk < 0);
   assert.equal(elevatorFrame(14).pressed, true);
-  assert.equal(elevatorFrame(14).walk, 22);
+  assert.equal(elevatorFrame(14).walk, 0);
   assert.equal(elevatorFrame(21).gap, 0);
   assert.equal(elevatorFrame(21).depth, 0);
   assert.equal(elevatorFrame(ELEVATOR_FRAMES).visible, false);

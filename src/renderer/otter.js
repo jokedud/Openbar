@@ -2,6 +2,7 @@
 (() => {
   const { palette, frames } = typeof module === 'object' ? require('./otter-art') : window.otterArt;
   const ELEVATOR_FRAMES = 25;
+  const PERCH_GUTTER = 14;
   const newColors = {
     q: '#263b50', d: '#36556c', m: '#557a92', b: '#8eb2c5', a: '#cee5ed',
     r: '#ad625a', p: '#f49a73', e: '#fff0c8',
@@ -58,7 +59,7 @@
   function elevatorFrame(index) {
     const depth = index < 4 ? [24, 15, 7, 0][index] : index < 22 ? 0 : [7, 15, 24, 24][index - 22];
     const gap = Math.max(0, Math.min(8, (index - 3) * 3, (21 - index) * 3));
-    const walk = Math.max(0, Math.min(22, (index - 6) * 3));
+    const walk = Math.min(0, Math.max(-PERCH_GUTTER, -index * 4, (index - 14) * 3)) || 0;
     return { depth, gap, walk, pressed: index >= 14 && index <= 17, visible: index < 21 };
   }
 
@@ -70,7 +71,7 @@
       this.frame = 0;
     }
 
-    pixels(x, y, rows, clipLeft = 0, clipRight = 48) {
+    pixels(x, y, rows, clipLeft = -PERCH_GUTTER, clipRight = 48 - PERCH_GUTTER) {
       rows.forEach((row, dy) => {
         for (let dx = 0; dx < row.length; dx++) {
           const color = palette[row[dx]] || newColors[row[dx]];
@@ -125,30 +126,31 @@
       const top = 1 + depth;
       this.ctx.save();
       this.ctx.beginPath();
-      this.ctx.rect(0, 0, 48, 22);
+      this.ctx.rect(-PERCH_GUTTER, 0, 48, 22);
       this.ctx.clip();
-      this.rect(25, top, 22, 22, 'q');
-      this.rect(26, top + 1, 20, 20, 'm');
-      this.rect(27, top + 5, 18, 15, 'q');
-      this.rect(29, top + 7, 14, 13, 'd');
-      this.rect(30, top + 19, 12, 1, 'b');
-      const left = 36 - gap, right = 36 + gap;
+      this.rect(0, top, 22, 22, 'q');
+      this.rect(1, top + 1, 20, 20, 'm');
+      this.rect(2, top + 5, 18, 15, 'q');
+      this.rect(4, top + 7, 14, 13, 'd');
+      this.rect(5, top + 19, 12, 1, 'b');
+      const left = 11 - gap, right = 11 + gap;
+      this.rect(2, top + 5, left - 2, 15, 'm');
+      this.rect(right, top + 5, 20 - right, 15, 'm');
+      this.rect(left - 1, top + 5, 1, 15, 'b');
+      this.rect(right, top + 5, 1, 15, 'q');
       if (visible) {
         const step = walk ? n % 3 : 0;
         const base = frames.idle[step].slice(0, 19).concat(LEGS[step].map((row) => '.....' + row + '........'));
-        this.pixels(walk, walk ? 1 : 0, base, 0, walk < 20 ? 45 : right);
-        if (pressed && !entering) this.pixels(35, 11, ['KFFK', 'KFFFK', ' KK  '], left, right);
+        this.pixels(walk, walk ? 1 : 0, base, -PERCH_GUTTER, n >= 18 ? right : 48 - PERCH_GUTTER);
       }
-      this.rect(27, top + 5, left - 27, 15, 'm');
-      this.rect(right, top + 5, 45 - right, 15, 'm');
-      this.rect(left - 1, top + 5, 1, 15, 'b');
-      this.rect(right, top + 5, 1, 15, 'q');
-      this.rect(33, top + 1, 6, 3, 'q');
-      this.pixels(34, top + 1, entering ? [' a ', 'aaa', '   '] : ['   ', 'aaa', ' a ']);
-      this.rect(42, top + 9, 2, 2, pressed && !entering ? 'p' : 'a');
-      this.rect(25, top + 20, 22, 1, 'a');
+      if (n >= 18) this.rect(2, top + 5, left - 2, 15, 'm');
+      this.rect(8, top + 1, 6, 3, 'q');
+      this.pixels(9, top + 1, entering ? [' a ', 'aaa', '   '] : ['   ', 'aaa', ' a ']);
+      this.rect(18, top + 9, 2, 2, pressed && !entering ? 'p' : 'a');
+      if (pressed && !entering) this.pixels(13, 11, ['KKFFK', 'KFFK ', 'KK   ']);
+      this.rect(0, top + 20, 22, 1, 'a');
       this.ctx.restore();
-      if (depth < 24) this.rect(25, 22, 22, 1, 'd');
+      if (depth < 24) this.rect(0, 22, 22, 1, 'd');
     }
 
     draw(clip, n, { left, floor, scale }, entering) {
@@ -156,13 +158,16 @@
       if (this.canvas.hidden) return;
       this.canvas.style.width = `${48 * scale}px`;
       this.canvas.style.height = `${26 * scale}px`;
-      this.canvas.style.transform = `translate(${left}px,${floor - 22 * scale}px)`;
+      this.canvas.style.transform = `translate(${left - PERCH_GUTTER * scale}px,${floor - 22 * scale}px)`;
       if (clip !== this.clip) { this.clip = clip; this.frame = 0; }
       n ??= this.frame++;
       this.ctx.clearRect(0, 0, 48, 26);
+      this.ctx.save();
+      this.ctx.translate(PERCH_GUTTER, 0);
       if (clip === 'idle') this.idle(n);
       else if (clip === 'elevator') this.elevator(n, entering);
       else this.pixels(0, 0, frames[clip][n % frames[clip].length]);
+      this.ctx.restore();
     }
   }
 

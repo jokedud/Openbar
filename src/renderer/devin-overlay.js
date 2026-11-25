@@ -24,10 +24,10 @@ function target(now) {
 function dockAnchor() {
   const { x, y, width, height, margin, position } = data.dock;
   const scale = position === 'top' ? 2 : 3;
-  const right = Math.min(innerWidth - 26 * scale, x + width - margin);
+  const right = Math.min(innerWidth, x + width - margin);
   return {
     left: Math.round(right - 22 * scale),
-    floor: Math.round(position === 'top' ? Math.max(21 * scale, y + height - margin) : y + margin + 8),
+    floor: Math.round(position === 'top' ? Math.max(21 * scale, y + height - margin) : y + margin + 2),
     scale,
   };
 }
