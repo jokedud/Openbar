@@ -48,7 +48,7 @@ class TaskbarRecovery {
   }
 
   resume(state) {
-    if (state.id === this.id || this.resuming === state.id) return;
+    if (this.resuming === state.id) return;
     this.resuming = state.id;
     launchWorker(this.folder, state.id, '-Resume', (err) => {
       if (err && this.pending()?.id === state.id) console.error('Could not resume Windows taskbar recovery:', err.message);
@@ -77,6 +77,7 @@ class TaskbarRecovery {
       });
     }
     const ready = this.ready();
+    if (this.armed && !ready) this.failed = true;
     this.armed ||= ready;
     return ready;
   }
@@ -98,13 +99,15 @@ class TaskbarRecovery {
   }
 
   restored() {
-    if (this.pending()?.id !== this.id) return;
-    if (!this.releasing && (this.armed || this.ready())) {
+    const state = this.pending();
+    if (state?.id !== this.id || this.releasing) return;
+    const ready = this.ready();
+    if (this.armed || ready) {
       fs.writeFileSync(path.join(this.folder, this.id + '.release'), '');
       this.releasing = true;
+      if (!ready) this.resume(state);
       return;
     }
-    if (this.releasing) return;
     fs.unlinkSync(this.file);
     this.reset();
   }

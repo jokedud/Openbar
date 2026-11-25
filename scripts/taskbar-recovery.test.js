@@ -93,6 +93,45 @@ test('the recovery worker discards a prepared journal without restoring Windows 
   assert.equal(recovery.pending(), null);
 });
 
+test('an unchanged hidden taskbar is restored if its recovery worker stops', (t) => {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'openbar-recovery-'));
+  t.after(() => fs.rmSync(profile, { recursive: true, force: true }));
+  const recovery = new TaskbarRecovery(profile);
+  recovery.arm(false);
+  const readyFile = path.join(recovery.folder, recovery.id + '.ready');
+  fs.writeFileSync(readyFile, String(process.pid));
+  let visible = true;
+  let autohide = false;
+  let data = {};
+  const apply = loadTaskbar(recovery, {
+    get: () => data,
+    set: (value) => { data = value; },
+    save() {},
+  }, {
+    ABS_AUTOHIDE: 1,
+    hasTaskbar: () => true,
+    getTaskbarState: () => Number(autohide),
+    taskbarVisibilityIs: (value) => visible === value,
+    setTaskbarAutoHide: (value) => { autohide = value; },
+    setTaskbarVisible: (value) => { visible = value; return true; },
+  });
+  apply();
+  assert.equal(visible, false);
+  assert.equal(autohide, true);
+  fs.unlinkSync(readyFile);
+
+  apply();
+  assert.equal(visible, true);
+  assert.equal(autohide, false);
+  assert.deepEqual(launch.mock.calls.at(-1).arguments[1].slice(-3), ['-Id', recovery.id, '-Resume']);
+  assert.equal(fs.existsSync(path.join(recovery.folder, recovery.id + '.release')), true);
+
+  fs.unlinkSync(recovery.file);
+  apply();
+  assert.equal(recovery.pending(), null);
+  assert.equal(visible, true);
+});
+
 test('a relaunch resumes an interrupted registration before arming a new worker', (t) => {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'openbar-recovery-'));
   t.after(() => fs.rmSync(profile, { recursive: true, force: true }));

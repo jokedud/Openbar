@@ -127,12 +127,14 @@ function applyTaskbar() {
   const autohide = (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0;
   const alreadySet = autohide && win32.taskbarVisibilityIs(visible);
   const legacy = original && !original.guarded;
-  if (alreadySet && !legacy && pending?.phase !== 'applying') return;
+  const overridden = pending && pending.phase !== 'prepared';
+  if (alreadySet && !legacy && !overridden) return;
   const baseline = legacy ? !!original.autohide : autohide;
   if (!taskbarRecovery.arm(baseline)) {
-    if (original?.guarded && pending?.id === original.id) restoreTaskbar();
+    if (overridden) restoreTaskbar();
     return;
   }
+  if (alreadySet && pending?.phase === 'applied') return;
   // Journal intent before touching Explorer or replacing a legacy baseline.
   if (!taskbarRecovery.recordOverride(baseline)) return;
   if (pending?.phase === 'prepared') {
