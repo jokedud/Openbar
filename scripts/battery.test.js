@@ -6,16 +6,19 @@ const { test } = require('node:test');
 const vm = require('node:vm');
 const { decodeStatus, estimateChargeTime, openPowerSettings } = require('../src/main/battery');
 
-function windowsBattery(build, functions) {
+function windowsBattery(build, functions, memory = new Map()) {
   const file = path.join(__dirname, '..', 'src', 'main', 'battery.js');
   const module = { exports: {} };
   const koffi = {
     load: () => ({ func: (signature) => functions[signature.match(/(\w+)\(/)[1]] }),
-    decode: (buffer, offset, type) => offset === 20 ? buffer.readUInt32LE(offset) :
-      offset === 'uint8_t' ? buffer.subarray(0, type) : buffer,
+    decode: (buffer, offset, type) => {
+      if (offset === 'void *') return memory.get(buffer.readUInt32LE(0)) ?? null;
+      if (offset === 'uint8_t') return buffer.subarray(0, type);
+      return buffer.readUInt32LE(typeof offset === 'number' ? offset : 0);
+    },
   };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), {
-    module, Buffer, process, require: (name) => name === 'koffi' ? koffi :
+    module, Buffer, process, setImmediate, require: (name) => name === 'koffi' ? koffi :
       name === 'node:os' ? { release: () => '10.0.' + build } : require(name),
   });
   return module.exports.createBattery();
@@ -49,11 +52,16 @@ test('remaining time and low battery are meaningful only when Windows reports ba
   assert.equal(status(0, 0, 42, 0).remaining, null);
 });
 
-test('Windows 11 Energy Saver notifications override a legacy Off flag and block mode changes', () => {
+test('Windows 11 Energy Saver notifications defer native refreshes and override a legacy Off flag', async () => {
   const saverGuid = Buffer.from('00840e559be2d441a716446655440000', 'hex');
-  let notify, writes = 0, changes = 0;
+  const memory = new Map();
+  let notify, writes = 0, changes = 0, inWindowMessage = false;
   const battery = windowsBattery(26100, {
-    GetSystemPowerStatus: (raw) => { raw.set([0, 0, 80, 0]); return 1; },
+    GetSystemPowerStatus: (raw) => {
+      assert.equal(inWindowMessage, false, 'GetSystemPowerStatus must not re-enter the native call pumping messages');
+      raw.set([0, 0, 80, 0]);
+      return 1;
+    },
     RegisterPowerSettingNotification: (_hwnd, setting) => { assert.deepEqual(setting, saverGuid); return 7; },
     UnregisterPowerSettingNotification: (handle) => assert.equal(handle, 7),
     PowerGetActualOverlayScheme: () => 0,
@@ -61,30 +69,45 @@ test('Windows 11 Energy Saver notifications override a legacy Off flag and block
     PowerGetActiveScheme: (_root, out) => { out[0] = Buffer.from('22421b3894f6f0419685ff5bb260df2e', 'hex'); return 0; },
     PowerReadACValue: (_root, scheme, _subgroup, _setting, type, value) => { type[0] = 3; scheme.copy(value); return 0; },
     LocalFree() {},
-  });
+  }, memory);
   const stop = battery.watchSaver({
     hookWindowMessage: (message, fn) => { assert.equal(message, 0x0218); notify = fn; },
     isDestroyed: () => false,
     unhookWindowMessage: (message) => { assert.equal(message, 0x0218); notify = null; },
-  }, 1, () => changes++);
+  }, 1, () => { battery.read(); changes++; });
   const payload = Buffer.alloc(24);
   saverGuid.copy(payload);
   payload.writeUInt32LE(4, 16);
+  const wParam = Buffer.alloc(8), lParam = Buffer.alloc(8);
+  wParam.writeUInt32LE(0x8013);
+  lParam.writeUInt32LE(42);
+  async function dispatch() {
+    memory.set(42, payload);
+    inWindowMessage = true;
+    try { notify(wParam, lParam); }
+    finally { inWindowMessage = false; memory.delete(42); }
+    await new Promise(setImmediate);
+  }
   assert.equal(battery.read().saver, false);
   payload.writeUInt32LE(1, 20);
-  notify(0x8013, payload);
+  await dispatch();
   assert.equal(battery.read().saver, true);
   assert.equal(battery.setMode('balanced'), false);
   assert.equal(writes, 0);
   payload.writeUInt32LE(2, 20);
-  notify(0x8013, payload);
+  await dispatch();
   assert.equal(battery.read().saver, true);
   payload.writeUInt32LE(0, 20);
-  notify(0x8013, payload);
+  await dispatch();
   assert.equal(battery.read().saver, false);
   assert.equal(changes, 2);
+  payload.writeUInt32LE(1, 20);
+  const pending = dispatch();
   stop();
   assert.equal(notify, null);
+  await pending;
+  assert.equal(battery.read().saver, false);
+  assert.equal(changes, 2);
 });
 
 test('overlay changes follow the power plan personality, not its instance GUID', () => {

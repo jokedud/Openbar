@@ -5,6 +5,11 @@ const path = require('node:path');
 const test = require('node:test');
 const { build } = require('../package.json');
 
+test('the portable launcher uses a separate extraction directory per launch', () => {
+  assert.equal(build.portable.unpackDirName, true,
+    'electron-builder otherwise shares a build-specific directory between launches');
+});
+
 test('the portable launcher has a Windows bitmap to display during extraction', () => {
   const splashImage = build.portable.splashImage;
   assert.ok(splashImage, 'without a splash image electron-builder runs the portable launcher silently');
