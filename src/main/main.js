@@ -20,6 +20,7 @@ let settingsStore, dataStore, devinStore, taskbarRecovery;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
+let devinPanelSize = null;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
@@ -395,20 +396,23 @@ function createBar() {
 }
 
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const DEVIN_PANEL_RADIUS = 28;
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
   const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
-  const radius = widget === 'devin' ? 28 : PANEL_RADIUS;
+  const radius = widget === 'devin' ? DEVIN_PANEL_RADIUS : PANEL_RADIUS;
   const bb = bar.getBounds();
   const d = screen.getDisplayMatching(bb).workArea;
   const db = screen.getDisplayMatching(bb).bounds;
-  const room = S().position === 'top' ? db.y + db.height - (bb.y + bb.height) : bb.y - db.y;
+  const atTop = S().position === 'top';
+  const room = atTop ? db.y + db.height - (bb.y + bb.height) : bb.y - db.y;
   const h = Math.min(preferredH, room - 14);
   let x = Math.round(bb.x + (anchorX || bb.width / 2) - w / 2);
   x = Math.max(db.x + 8, Math.min(x, db.x + db.width - w - 8));
   const gap = widget === 'devin' ? 6 - S().margin : 6;
-  const y = S().position === 'top' ? bb.y + bb.height + gap : bb.y - h - gap;
+  const y = atTop ? bb.y + bb.height + gap : bb.y - h - gap;
+  devinPanelSize = widget === 'devin' ? { maxHeight: h, atTop } : null;
   if (!panel || panel.isDestroyed()) {
     panel = new BrowserWindow({
       x, y, width: w, height: h, frame: false, transparent: true, resizable: false, skipTaskbar: true, alwaysOnTop: true,
@@ -431,6 +435,17 @@ function togglePanel(widget, anchorX) {
   void d;
   panelWidget = widget;
   broadcast('panel', widget);
+}
+
+function fitDevinPanel(e, contentHeight) {
+  if (panelWidget !== 'devin' || !devinPanelSize || !panel || panel.isDestroyed() ||
+      e.sender !== panel.webContents || !Number.isFinite(contentHeight) || contentHeight <= 0) return;
+  const bounds = panel.getBounds();
+  const height = Math.min(Math.ceil(contentHeight), devinPanelSize.maxHeight);
+  if (height === bounds.height) return;
+  const y = devinPanelSize.atTop ? bounds.y : bounds.y + bounds.height - height;
+  panel.setBounds({ ...bounds, y, height });
+  clipGlass(panel, panelHwnd, 0, DEVIN_PANEL_RADIUS, { width: bounds.width, height });
 }
 
 function openSettings(tab) {
@@ -619,6 +634,7 @@ function registerIpc() {
   ipcMain.handle('system', (_e, action) => { const f = SYSTEM_ACTIONS[action]; if (f) f(); });
   ipcMain.handle('open', (_e, url) => { if (SAFE_URL.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
+  ipcMain.handle('panel:fit-devin', fitDevinPanel);
   ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));
   ipcMain.handle('bar:width', (_e, w) => { if (Math.abs(w - lastContentWidth) > 2) { lastContentWidth = w; if (S().layout === 'pill') layoutBar(); } });

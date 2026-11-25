@@ -17,6 +17,7 @@ body { padding: 0; }
   --bubble-shift: 18px;
 }
 [data-position="top"] #panel[data-widget="devin"] { --bubble-shift: -18px; }
+#panel[data-widget="devin"]:not(.enter) { visibility: hidden; }
 #panel[data-widget="devin"].enter { animation: devin-bubble .48s cubic-bezier(.22,.72,.26,1) both; }
 @keyframes devin-bubble {
   0% { opacity: 0; transform: translateY(var(--bubble-shift)) scale(.78,.57); }
@@ -27,8 +28,9 @@ body { padding: 0; }
 @media (prefers-reduced-motion: reduce) {
   #panel[data-widget="devin"].enter, #panel[data-widget="devin"].enter #body > * { animation: none; }
 }
-#panel[data-widget="devin"] .head { padding: 18px 18px 10px; }
-#panel[data-widget="devin"] #body { padding: 4px 14px 16px; }
+#panel[data-widget="devin"] .head { flex: none; padding: 18px 18px 10px; }
+#panel[data-widget="devin"] #body { padding: 0; }
+.devin-content { padding: 4px 14px 16px; }
 .devin-label { display: flex; gap: 7px; align-items: center; padding: 2px 5px 10px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .13em; }
 .devin-list { display: grid; gap: 6px; }
 .devin-session {
@@ -41,8 +43,8 @@ body { padding: 0; }
 .devin-status { padding: 4px 8px; border-radius: 999px; background: var(--hover); text-transform: capitalize; flex: none; }
 .devin-status.live { color: var(--good); }
 .devin-message:not(:empty) { padding: 10px 5px; }
-#panel[data-widget="devin"] #body > .btn { margin-top: 8px; }
-#panel[data-widget="devin"] #body > .btn[hidden] { display: none; }
+.devin-content > .btn { margin-top: 8px; }
+.devin-content > .btn[hidden] { display: none; }
 .head { display: flex; align-items: center; gap: 8px; padding: 16px 16px 10px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
 #body { flex: 1; overflow-y: auto; padding: 2px 12px 12px; }
 .card { background: var(--card); box-shadow: inset 0 0 0 1px var(--card-line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; }

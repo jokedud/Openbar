@@ -80,6 +80,8 @@ test('the Devin bubble stays six pixels from the visible dock at either edge', (
   let bounds;
   class BrowserWindow {
     constructor(options) { bounds = options; this.webContents = { send() {} }; }
+    getBounds() { const { x, y, width, height } = bounds; return { x, y, width, height }; }
+    setBounds(next) { bounds = next; }
     setAlwaysOnTop() {}
     on() {}
     once() {}
@@ -97,9 +99,21 @@ test('the Devin bubble stays six pixels from the visible dock at either edge', (
   vm.runInContext("togglePanel('devin', 350)", context);
   assert.equal(bounds.y + bounds.height, context.dock.y + settings.margin - 6);
   assert.equal(bounds.x + bounds.width / 2, 500);
+  const maxHeight = bounds.height;
+  vm.runInContext("fitDevinPanel({ sender: {} }, 260)", context);
+  assert.equal(bounds.height, maxHeight);
+  vm.runInContext("fitDevinPanel({ sender: panel.webContents }, 260.4)", context);
+  assert.equal(bounds.height, 261);
+  assert.equal(bounds.y + bounds.height, context.dock.y + settings.margin - 6);
+  vm.runInContext("fitDevinPanel({ sender: panel.webContents }, 850)", context);
+  assert.equal(bounds.height, maxHeight);
+  assert.equal(bounds.y + bounds.height, context.dock.y + settings.margin - 6);
   settings.position = 'top';
   context.dock.y = 0;
   vm.runInContext("panel = null; togglePanel('devin', 350)", context);
+  assert.equal(bounds.y, context.dock.y + context.dock.height - settings.margin + 6);
+  vm.runInContext("fitDevinPanel({ sender: panel.webContents }, 175)", context);
+  assert.equal(bounds.height, 175);
   assert.equal(bounds.y, context.dock.y + context.dock.height - settings.margin + 6);
 });
 

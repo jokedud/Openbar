@@ -322,15 +322,37 @@ P.devin = (body) => {
   };
   more.onclick = () => load(true);
   setHead('Devin sessions', actionBtn('refresh', 'Refresh', () => load()), settingsBtn('devin'));
-  body.append(h('div', { class: 'devin-label' }, icon('devin', 14), 'CLOUD SESSIONS'), list, message, more);
+  body.append(h('div', { class: 'devin-content' },
+    h('div', { class: 'devin-label' }, icon('devin', 14), 'CLOUD SESSIONS'), list, message, more));
   load();
 };
 
 // ---------- router ----------
+let devinSizeObserver;
 function animateIn() {
   const el = $('panel');
+  devinSizeObserver?.disconnect();
+  devinSizeObserver = null;
   el.dataset.widget = widget || '';
   el.classList.remove('enter');
+  if (widget === 'devin') {
+    const header = el.firstElementChild;
+    const content = $('body').firstElementChild;
+    let height;
+    const observer = new ResizeObserver(() => {
+      const measured = header.offsetHeight + content.offsetHeight;
+      if (observer !== devinSizeObserver || height === measured) return;
+      height = measured;
+      const start = !el.classList.contains('enter');
+      api.invoke('panel:fit-devin', height).catch(() => {}).then(() => {
+        if (start && observer === devinSizeObserver) el.classList.add('enter');
+      });
+    });
+    devinSizeObserver = observer;
+    observer.observe(header);
+    observer.observe(content);
+    return;
+  }
   void el.offsetWidth;
   el.classList.add('enter');
 }
