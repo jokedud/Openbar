@@ -107,16 +107,21 @@ function createBattery() {
     const user = koffi.load('user32.dll');
     const register = user.func('void * __stdcall RegisterPowerSettingNotification(intptr_t window, const uint8_t *setting, uint32 flags)');
     const unregister = user.func('int __stdcall UnregisterPowerSettingNotification(void *handle)');
+    let stopped = false;
     window.hookWindowMessage(WM_POWERBROADCAST, (wParam, lParam) => {
-      if (Number(koffi.decode(wParam, 'uintptr_t')) !== PBT_POWERSETTINGCHANGE) return;
+      if (wParam.readUInt32LE(0) !== PBT_POWERSETTINGCHANGE) return;
+      // Decode only reads memory: lParam's payload is valid only during the hook.
       const setting = koffi.decode(lParam, 'void *');
       if (!setting) return;
       const header = Buffer.from(koffi.decode(setting, 'uint8_t', 20));
       if (!header.subarray(0, 16).equals(ENERGY_SAVER_STATUS) || header.readUInt32LE(16) !== 4) return;
       const status = koffi.decode(setting, 20, 'uint32_t');
       if (status !== 0 && status !== 1 && status !== 2) return;
-      const next = status !== 0;
-      if (next !== energySaver) { energySaver = next; onChange(); }
+      setImmediate(() => {
+        if (!handle || stopped || window.isDestroyed()) return;
+        const next = status !== 0;
+        if (next !== energySaver) { energySaver = next; onChange(); }
+      });
     });
     const handle = register(hwnd, ENERGY_SAVER_STATUS, 0);
     if (!handle) {
@@ -124,6 +129,7 @@ function createBattery() {
       return () => {};
     }
     return () => {
+      stopped = true;
       unregister(handle);
       if (!window.isDestroyed()) window.unhookWindowMessage(WM_POWERBROADCAST);
     };
