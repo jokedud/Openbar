@@ -25,7 +25,7 @@ function drawCustomTabs(m) {
       if (name.value.trim()) submit(name.value.trim());
     } }, name, h('button', { class: 'btn' }, button));
   };
-  m.append(h('h1', {}, 'Custom tabs'), h('p', { class: 'lead' }, 'Create spaces for work, games, or anything else. Choose a tab on the dock to show its items on the left. Home brings back your usual widgets.'));
+  m.append(h('h1', {}, 'Custom tabs'), h('p', { class: 'lead' }, 'Create spaces for work, games, or anything else. Choose a tab on the dock to show its items on the left. Select the Windows icon to return to your default widgets.'));
   m.append(h('h2', {}, 'Add a tab'), nameForm('', 'Add tab', (name) => {
     editingTab = crypto.randomUUID();
     update([...tabs, { id: editingTab, name, items: [] }]);

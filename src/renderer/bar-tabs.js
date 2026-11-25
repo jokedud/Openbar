@@ -35,21 +35,24 @@ function renderDockTabs(tabs) {
     return null;
   }
   if (!dockTabs.isConnected) dockLeft.before(dockTabs);
-  const buttons = [{ id: null, name: 'Home' }, ...tabs];
+  const buttons = [{ id: null, name: 'Default widgets' }, ...tabs];
   for (const [index, tab] of buttons.entries()) {
+    const isDefault = tab.id === null;
     let button = dockTabs.children[index];
     if (!button) {
-      button = h('button', { class: 'w', onclick: (e) => {
+      const label = isDefault ? icon('windows', 18) : h('span', { class: 'ellipsis' });
+      if (isDefault) label.setAttribute('aria-hidden', 'true');
+      button = h('button', { class: 'w', 'aria-label': isDefault ? tab.name : null, onclick: (e) => {
         dockTabId = e.currentTarget.dataset.tab || null;
         if (openPanel) api.invoke('panel:close');
         scheduleRender();
-      } }, h('span', { class: 'ellipsis' }));
+      } }, label);
       dockTabs.append(button);
     }
     button.dataset.tab = tab.id || '';
     button.setAttribute('aria-pressed', String(tab.id === dockTabId));
     button.title = tab.name;
-    if (button.firstChild.textContent !== tab.name) button.firstChild.textContent = tab.name;
+    if (!isDefault && button.firstChild.textContent !== tab.name) button.firstChild.textContent = tab.name;
   }
   while (dockTabs.childElementCount > buttons.length) dockTabs.lastElementChild.remove();
   return active;
