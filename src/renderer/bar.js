@@ -24,6 +24,8 @@ const TITLES = { start: 'Launcher (search apps)', weather: 'Weather', system: 'S
 const W = {};
 TITLES.bluetooth = 'Bluetooth';
 W.bluetooth = () => panelBtn('bluetooth', '', icon('bluetooth', 16));
+TITLES.brightness = 'Brightness';
+W.brightness = () => panelBtn('brightness', '', icon('sun'));
 W.start = () => panelBtn('start', '', icon('grid', 18));
 W.sep = () => h('span', { class: 'sep' });
 W.search = () => h('button', { class: 'w', title: 'Windows search', 'data-sys': 'search' }, icon('search', 16));
