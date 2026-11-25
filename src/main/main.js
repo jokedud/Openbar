@@ -474,22 +474,27 @@ function launch(item) {
   return shell.openPath(item.path);
 }
 
+function devinConfigInfo() {
+  const { encrypted, orgId } = devinStore.get();
+  return { configured: !!encrypted, orgId };
+}
+
+function saveDevinConfig(config) {
+  const previous = devinStore.get();
+  try {
+    devinStore.replace(config);
+    devinStore.save(true);
+    return devinConfigInfo();
+  } catch {
+    devinStore.value = previous;
+    return { error: 'storage' };
+  }
+}
+
 function registerDevinIpc() {
-  const info = () => ({ configured: !!devinStore.get().encrypted, orgId: devinStore.get().orgId });
   const storageAvailable = () => safeStorage.isEncryptionAvailable()
     && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
-  const saveConfig = (config) => {
-    const previous = devinStore.get();
-    try {
-      devinStore.replace(config);
-      devinStore.save(true);
-      return info();
-    } catch {
-      devinStore.value = previous;
-      return { error: 'storage' };
-    }
-  };
-  ipcMain.handle('devin:config', () => info());
+  ipcMain.handle('devin:config', devinConfigInfo);
   ipcMain.handle('devin:save', (e, key, organization) => {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
     if (typeof key !== 'string' || typeof organization !== 'string') return { error: 'invalid' };
@@ -498,21 +503,21 @@ function registerDevinIpc() {
       const saved = devinStore.get();
       if (!saved.encrypted) return { error: 'invalid' };
       if ((orgId || saved.orgId) && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
-      return saveConfig({ encrypted: saved.encrypted, orgId });
+      return saveDevinConfig({ encrypted: saved.encrypted, orgId });
     }
     if (/\s/.test(token)) return { error: 'invalid' };
     if (!token.startsWith('apk_') && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
     if (!storageAvailable()) return { error: 'storage' };
     try {
       const encrypted = safeStorage.encryptString(token).toString('base64');
-      return saveConfig({ encrypted, orgId: token.startsWith('apk_') ? '' : orgId });
+      return saveDevinConfig({ encrypted, orgId: token.startsWith('apk_') ? '' : orgId });
     } catch {
       return { error: 'storage' };
     }
   });
   ipcMain.handle('devin:remove', (e) => {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
-    return saveConfig({});
+    return saveDevinConfig({});
   });
   ipcMain.handle('devin:list', (_e, cursor) => {
     const { encrypted, orgId } = devinStore.get();
@@ -541,7 +546,14 @@ function registerIpc() {
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
   ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); applySettings(prev); return S(); });
-  ipcMain.handle('settings:reset', () => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(DEFAULT_SETTINGS); applySettings(prev); return S(); });
+  ipcMain.handle('settings:reset', () => {
+    const { configured, orgId } = devinConfigInfo();
+    if ((configured || orgId) && saveDevinConfig({}).error) throw new Error('Could not remove the saved Devin key.');
+    const prev = JSON.parse(JSON.stringify(S()));
+    settingsStore.replace(DEFAULT_SETTINGS);
+    applySettings(prev);
+    return S();
+  });
   ipcMain.handle('data:set', (_e, patch) => { dataStore.set(patch); broadcast('data', D()); return D(); });
   ipcMain.handle('data:replaceKey', (_e, key, value) => { dataStore.value[key] = value; dataStore.save(); broadcast('data', D()); return D(); });
   ipcMain.handle('win:action', (_e, hwnd, action) => {

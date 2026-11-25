@@ -290,7 +290,15 @@ T.about = (m) => {
       const f = e.target.files[0]; if (!f) return;
       try { const j = JSON.parse(await f.text()); const cmds = (j.settings && j.settings.commands) || []; if (cmds.length && !confirm(`This backup contains command widgets that will run on this PC:\n\n${cmds.map((c) => c.command).join('\n')}\n\nImport them?`)) j.settings.commands = []; if (j.settings) await api.invoke('settings:replace', j.settings); if (j.data) for (const k of Object.keys(j.data)) if (k !== 'taskbarRestore') await OB.setDataKey(k, j.data[k]); OB.settings = await api.invoke('init').then((r) => r.settings); draw(); } catch (err) { alert('Invalid backup: ' + err.message); }
     } })),
-    h('button', { class: 'btn', onclick: async () => { if (confirm('Reset all settings to defaults?')) { OB.settings = await api.invoke('settings:reset'); draw(); } } }, 'Reset settings'),
+    h('button', { class: 'btn', onclick: async () => {
+      if (!confirm('Reset all settings to defaults and remove the saved Devin API key?')) return;
+      try {
+        OB.settings = await api.invoke('settings:reset');
+        draw();
+      } catch {
+        alert('Could not reset settings.');
+      }
+    } }, 'Reset settings'),
     h('button', { class: 'btn', onclick: () => api.invoke('open', 'https://github.com/jokedud/openbar') }, icon('github', 14), 'Source code'),
     h('button', { class: 'btn', onclick: () => api.invoke('quit') }, icon('power', 14), 'Quit OpenBar')));
 };

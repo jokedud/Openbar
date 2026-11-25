@@ -142,3 +142,14 @@ test('organization-only changes retain the stored encrypted token', () => {
   assert.equal(credentials.get().orgId, 'org-new');
   assert.equal(mainIpc({ encrypted: '', orgId: '' }).invoke('devin:save', '', 'org-new').error, 'invalid');
 });
+
+test('reset settings removes the saved Devin token and organization', () => {
+  const { credentials, invoke } = mainIpc({ encrypted: 'existing-ciphertext', orgId: 'org-old' });
+  let savedNow;
+  credentials.save = (now) => { savedNow = now; };
+  assert.equal(invoke('settings:reset').layout, 'pill');
+  assert.equal(savedNow, true);
+  assert.equal(credentials.get().encrypted, '');
+  assert.equal(credentials.get().orgId, '');
+  assert.equal(invoke('devin:list').error, 'missing');
+});
