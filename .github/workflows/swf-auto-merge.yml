@@ -1,0 +1,50 @@
+name: SWF auto-merge
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+  status:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report eligibility without merging
+        type: boolean
+        default: true
+
+concurrency: swf-auto-merge
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  pull-requests: read
+  statuses: read
+
+jobs:
+  merge:
+    if: github.ref == 'refs/heads/main'
+    name: Merge ready SWF PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          if [[ "$MERGE" == 'true' ]]; then
+            node scripts/swf-auto-merge.js --merge
+          else
+            node scripts/swf-auto-merge.js
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
