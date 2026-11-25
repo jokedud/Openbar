@@ -2,6 +2,7 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
 const { activeSession } = require('../renderer/devin-motion');
+const CLOUD_PAGE_LIMIT = 5;
 
 class DevinCompanion {
   constructor({ preload, listLocal, listCloud, foregroundBounds }) {
@@ -39,7 +40,7 @@ class DevinCompanion {
     if (this.request || now - this.cloudAt < 20000) return;
     this.cloudAt = now;
     const revision = this.revision;
-    this.request = Promise.resolve(this.listCloud()).then((page) => {
+    this.request = this.listCloudPages(revision).then((page) => {
       if (revision !== this.revision) return;
       this.request = null;
       if (page.sessions) this.cloud = page.sessions;
@@ -47,6 +48,22 @@ class DevinCompanion {
       this.activity = activeSession(this.listLocal(), this.cloud, Date.now());
       this.present();
     });
+  }
+
+  async listCloudPages(revision) {
+    const sessions = [];
+    const seen = new Set();
+    let cursor;
+    for (let i = 0; i < CLOUD_PAGE_LIMIT; i++) {
+      const page = await this.listCloud(cursor);
+      if (revision !== this.revision) return {};
+      if (!page.sessions) return i === 0 ? page : { sessions };
+      sessions.push(...page.sessions);
+      cursor = page.next;
+      if (cursor == null || seen.has(cursor)) break;
+      seen.add(cursor);
+    }
+    return { sessions };
   }
 
   present() {
