@@ -82,9 +82,13 @@ function transparencyEnabled() {
     return !/REG_DWORD\s+0x0\b/.test(out);
   } catch { return true; }
 }
-function enableGlass(win, hwnd, mode) {
+function setBackdrop(hwnd, mode) {
+  try { return win32.setBackdrop(hwnd, mode); } catch (e) { console.error('backdrop', e); return 'off'; }
+}
+// The bar decides whether glass is on; panels follow it so both windows always share one tint.
+function enableGlass(hwnd) {
   if (!isWin || !hwnd) return;
-  try { glassMode = win32.setBackdrop(hwnd, transparencyEnabled() ? mode : 'off'); } catch (e) { glassMode = 'off'; console.error('backdrop', e); }
+  glassMode = setBackdrop(hwnd, transparencyEnabled() ? 'blur' : 'off');
   state.glass = glassMode;
   broadcast('state', { glass: glassMode });
 }
@@ -339,7 +343,7 @@ function createBar() {
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(bar, barHwnd, 'blur'); }
+  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); }
   bar.on('closed', () => { bar = null; });
 }
 
@@ -365,7 +369,7 @@ function togglePanel(widget, anchorX) {
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
     panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
-    enableGlass(panel, panelHwnd, 'acrylic');
+    if (panelHwnd) setBackdrop(panelHwnd, glassMode === 'off' ? 'off' : 'acrylic');
     panel.on('show', () => clipGlass(panel, panelHwnd, 0, PANEL_RADIUS));
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
