@@ -8,9 +8,10 @@ const startmenu = require('./startmenu');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
+const APP_ID = 'xyz.openbar.app';
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
-app.setAppUserModelId('xyz.openbar.app');
+app.setAppUserModelId(APP_ID);
 
 let settingsStore, dataStore;
 let bar = null, panel = null, settingsWin = null, tray = null;
@@ -374,13 +375,12 @@ function createTray() {
 }
 
 // ---------------- IPC ----------------
-function syncLoginItem({ onlyIfChanged = false } = {}) {
+function syncLoginItem() {
   if (!app.isPackaged) return;
-  const path = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-  const openAtLogin = !!S().launchAtLogin;
-  if (!onlyIfChanged || app.getLoginItemSettings({ path }).openAtLogin !== openAtLogin) {
-    app.setLoginItemSettings({ openAtLogin, path });
-  }
+  app.setLoginItemSettings({
+    openAtLogin: !!S().launchAtLogin,
+    path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath,
+  });
 }
 
 function applySettings(prev) {
@@ -489,7 +489,7 @@ app.whenReady().then(() => {
     ] });
     settingsStore.save(true);
   }
-  if (isWin) syncLoginItem({ onlyIfChanged: true });
+  if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
   registerIpc();
   createBar();
   createTray();
