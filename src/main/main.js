@@ -17,7 +17,7 @@ let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
 const state = {
-  system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0,
+  system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
   errors: {},
 };
@@ -145,12 +145,18 @@ async function pollWindows() {
     dataStore.save();
     if (now - (pollWindows.stSent || 0) > 30000) { pollWindows.stSent = now; broadcast('data', D()); }
   }
-  const sig = JSON.stringify(list.map((w) => [w.hwnd, w.title, w.minimized])) + active;
+  const previousOrder = new Map(state.windows.map((w, i) => [w.hwnd, i]));
+  const rank = (w) => previousOrder.get(w.hwnd) ?? previousOrder.size;
+  const recentHwnds = list.map((w) => w.hwnd);
+  const appKeys = new Set(list.map((w) => (w.path || w.exe).toLowerCase()));
+  const windowAppOrder = state.windowAppOrder.filter((key) => appKeys.delete(key)).concat([...appKeys]);
+  list.sort((a, b) => rank(a) - rank(b));
+  const sig = JSON.stringify([list.map((w) => [w.hwnd, w.title, w.minimized]), active, recentHwnds, windowAppOrder]);
   if (sig !== pollWindows.sig) {
     pollWindows.sig = sig;
-    state.windows = list;
-    state.activeHwnd = active;
-    broadcast('state', { windows: list, activeHwnd: active });
+    const windowState = { windows: list, activeHwnd: active, recentHwnds, windowAppOrder };
+    Object.assign(state, windowState);
+    broadcast('state', windowState);
   }
 }
 

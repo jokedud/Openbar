@@ -48,11 +48,9 @@ W.apps = () => {
   });
   const rest = wins.filter((w) => !used.has((w.path || w.exe || '').toLowerCase()));
   if (s.pinned.length && rest.length) box.append(h('span', { class: 'sep' }));
-  const groups = [];
-  if (s.groupWindows) {
-    const seen = new Map();
-    for (const w of rest) { const k = (w.path || w.exe).toLowerCase(); if (!seen.has(k)) { seen.set(k, []); groups.push(seen.get(k)); } seen.get(k).push(w); }
-  } else rest.forEach((w) => groups.push([w]));
+  const groups = s.groupWindows
+    ? st.windowAppOrder.filter((key) => !used.has(key)).map((key) => byPath.get(key))
+    : rest.map((w) => [w]);
   for (const g of groups) {
     const w = g.find((x) => x.hwnd === st.activeHwnd) || g[0];
     const active = g.some((x) => x.hwnd === st.activeHwnd);
@@ -217,8 +215,14 @@ function runningFor(p) {
   return (OB.state.windows || []).filter((w) => (w.path || '').toLowerCase() === t);
 }
 function cycle(wins) {
+  if (!wins.length) return;
   const i = wins.findIndex((w) => w.hwnd === OB.state.activeHwnd);
-  if (wins.length === 1 || i < 0) return api.invoke('win:action', (wins[i] || wins[0]).hwnd, i < 0 ? 'focus' : 'toggle');
+  if (wins.length === 1) return api.invoke('win:action', wins[0].hwnd, i < 0 ? 'focus' : 'toggle');
+  if (i < 0) {
+    const groupHandles = new Set(wins.map((w) => w.hwnd));
+    const recent = OB.state.recentHwnds.find((hwnd) => groupHandles.has(hwnd));
+    return api.invoke('win:action', recent ?? wins[0].hwnd, 'focus');
+  }
   api.invoke('win:action', wins[(i + 1) % wins.length].hwnd, 'focus');
 }
 
