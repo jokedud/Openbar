@@ -7,6 +7,7 @@ const kernel32 = koffi.load('kernel32.dll');
 const shell32 = koffi.load('shell32.dll');
 const dwmapi = koffi.load('dwmapi.dll');
 const gdi32 = koffi.load('gdi32.dll');
+const advapi32 = koffi.load('advapi32.dll');
 
 const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
 const APPBARDATA = koffi.struct('APPBARDATA', {
@@ -46,6 +47,7 @@ const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProces
 
 const SHAppBarMessage = shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32_t msg, _Inout_ APPBARDATA *data)');
 const DwmGetWindowAttribute = dwmapi.func('long __stdcall DwmGetWindowAttribute(intptr_t hWnd, uint32_t attr, _Out_ uint32_t *val, uint32_t size)');
+const RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t key, const char16_t *subKey, const char16_t *value, uint32_t flags, void *type, void *data, _Out_ uint32_t *size)');
 
 // Native glass: an accent blur behind the window, clipped to a rounded region.
 const ACCENT_POLICY = koffi.struct('ACCENT_POLICY', { state: 'int', flags: 'int', color: 'uint32', animation: 'int' });
@@ -63,6 +65,9 @@ const DWMWA_CLOAKED = 14;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 const SW_HIDE = 0, SW_SHOWNA = 8, SW_RESTORE = 9, SW_MINIMIZE = 6, SW_SHOW = 5;
 const WM_CLOSE = 0x10;
+const HKEY_CURRENT_USER = -0x7fffffff;
+const RRF_RT_ANY = 0xffff;
+const ERROR_FILE_NOT_FOUND = 2;
 
 const ABM = { NEW: 0, REMOVE: 1, QUERYPOS: 2, SETPOS: 3, GETSTATE: 4, GETTASKBARPOS: 5, SETSTATE: 10 };
 const ABE = { left: 0, top: 1, right: 2, bottom: 3 };
@@ -228,6 +233,9 @@ function hwndFromBuffer(buf) {
   return buf.length >= 8 ? Number(buf.readBigUInt64LE(0)) : buf.readUInt32LE(0);
 }
 
+function isLoginItemMissing(name) {
+  return RegGetValueW(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Run', name, RRF_RT_ANY, null, null, [0]) === ERROR_FILE_NOT_FOUND;
+}
 
 const ACCENT_ENABLE_BLURBEHIND = 3;
 const WCA_ACCENT_POLICY = 19;
@@ -253,4 +261,5 @@ module.exports = {
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
+  isLoginItemMissing,
 };

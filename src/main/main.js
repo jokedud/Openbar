@@ -12,9 +12,10 @@ const devin = require('./devin');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
+const APP_ID = 'xyz.openbar.app';
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
-app.setAppUserModelId('xyz.openbar.app');
+app.setAppUserModelId(APP_ID);
 
 let settingsStore, dataStore, devinStore, taskbarRecovery;
 let bar = null, panel = null, settingsWin = null, tray = null;
@@ -476,11 +477,19 @@ function createTray() {
 }
 
 // ---------------- IPC ----------------
+function syncLoginItem() {
+  if (!app.isPackaged) return;
+  app.setLoginItemSettings({
+    openAtLogin: !!S().launchAtLogin,
+    path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath,
+  });
+}
+
 function applySettings(prev) {
   const s = S();
   layoutBar();
   if (prev.taskbar !== s.taskbar) applyTaskbar();
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!s.launchAtLogin, path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath });
+  syncLoginItem();
   if (JSON.stringify(prev.commands) !== JSON.stringify(s.commands)) scheduleCommands();
   if (JSON.stringify(prev.weather) !== JSON.stringify(s.weather)) refreshers.weather();
   if (JSON.stringify(prev.calendars) !== JSON.stringify(s.calendars)) refreshers.calendar();
@@ -676,6 +685,7 @@ app.whenReady().then(() => {
     ] });
     settingsStore.save(true);
   }
+  if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
   registerIpc();
   createBar();
   createTray();
