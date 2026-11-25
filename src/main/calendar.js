@@ -31,10 +31,14 @@ async function fetchCalendar(cal) {
   return out;
 }
 
+const MEETING_HOST = /(^|\.)(zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com)$/i;
+
 function findMeetingUrl(ev) {
   const hay = [ev.location, ev.description, ev.url && (ev.url.val || ev.url)].filter(Boolean).join(' ');
-  const m = String(hay).match(/https:\/\/[^\s"<>]*(zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com)[^\s"<>]*/i);
-  return m ? m[0] : '';
+  for (const u of String(hay).match(/https:\/\/[^\s"<>]+/gi) || []) {
+    try { if (MEETING_HOST.test(new URL(u).hostname)) return u; } catch (_) { /* not a URL */ }
+  }
+  return '';
 }
 
 async function fetchAll(calendars) {
