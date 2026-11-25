@@ -174,19 +174,18 @@ let appStripObserver;
 
 function updateAppOverflow(strip) {
   const [apps, more] = strip.children;
-  const hidden = apps.scrollWidth <= strip.clientWidth;
-  if (more.hidden !== hidden) more.hidden = hidden;
-  const expanded = openPanel === 'overflow';
-  more.classList.toggle('open', expanded);
-  more.setAttribute('aria-expanded', String(expanded));
+  updateFolder(more, apps, strip, 'overflow', (tile) => {
+    const img = tile.querySelector('img');
+    return img ? h('img', { src: img.src, alt: '' }) : icon('desktop', 12);
+  });
 }
 
 function appStrip(apps) {
-  const more = h('button', { class: 'w app-more', 'aria-label': 'More apps', 'aria-haspopup': 'dialog',
-    title: 'More apps', onclick: (e) => showAppOverflow(apps, e.currentTarget) }, '…');
-  more.hidden = true;
+  const more = folderButton('More apps', (e) => showAppOverflow(apps, e.currentTarget));
+  more.classList.add('app-more');
   const strip = h('div', { class: 'app-strip' }, apps, more);
-  apps.addEventListener('wheel', (e) => {
+  apps.addEventListener('scroll', () => updateAppOverflow(strip));
+  strip.addEventListener('wheel', (e) => {
     if (e.ctrlKey || e.deltaX || !e.deltaY || apps.scrollWidth <= apps.clientWidth) return;
     e.preventDefault();
     e.stopPropagation();
@@ -199,10 +198,8 @@ function appStrip(apps) {
 function showAppOverflow(apps, button) {
   const pins = OB.settings.pinned;
   const items = [];
-  for (const tile of apps.children) {
+  for (const tile of clippedTiles(apps)) {
     if (!tile.matches('.app')) continue;
-    if (tile.offsetLeft >= apps.scrollLeft &&
-        tile.offsetLeft + tile.offsetWidth <= apps.scrollLeft + apps.clientWidth) continue;
     const pin = pins[+tile.dataset.pin];
     const hwnds = pin ? runningFor(pin).map((w) => w.hwnd) : tile.dataset.hwnds.split(',').map(Number);
     items.push({ label: tile.getAttribute('aria-label'), icon: tile.querySelector('img')?.src, pin, hwnds });
@@ -359,6 +356,7 @@ function pillWidth(bar) {
   let w = pad + Math.max(0, bar.children.length - 1) * gap;
   for (const z of bar.children) {
     if (!z.childElementCount) continue;
+    if (z.id === 'dock-tabs') { w += z.firstElementChild.scrollWidth; continue; }
     const zcs = getComputedStyle(z);
     const zgap = parseFloat(zcs.columnGap || zcs.gap) || 0;
     w += Math.max(0, z.childElementCount - 1) * zgap;
@@ -541,8 +539,10 @@ OB.init().then(() => {
   observeSurface(barEl);
   barEl?.addEventListener?.('mouseleave', () => clearDockPreview(false));
   OB.on(scheduleRender);
+  api.on('bar:select-tab', (id) => { dockTabId = id || null; scheduleRender(); });
   api.on('panel', (name) => {
     openPanel = name;
+    updateTabFolder();
     for (const strip of barEl.querySelectorAll('.app-strip')) updateAppOverflow(strip);
     scheduleRender();
   });

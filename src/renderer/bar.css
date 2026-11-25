@@ -39,8 +39,15 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 .app-strip { flex: 0 100 auto; min-width: 0; }
 .app-strip:has(.app) { min-width: var(--app-strip-min); }
 .apps { position: relative; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.app-more[hidden] { display: none; }
-.app-more { font-size: 18px; }
+.dock-folder[hidden], .folder-count:empty { display: none; }
+.dock-folder { position: relative; width: var(--tile-h); padding: 0; }
+.folder-preview { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; padding: 3px;
+  border-radius: 7px; background: var(--hover); }
+.folder-preview > * { width: 12px; height: 12px; max-width: calc(var(--tile-h) * .24); max-height: calc(var(--tile-h) * .24); object-fit: contain; }
+.folder-preview .ic svg { width: 100%; height: 100%; }
+.folder-initial { display: grid; place-items: center; border-radius: 3px; background: var(--active); font-size: 8px; line-height: 1; }
+.folder-count { position: absolute; top: 1px; right: 1px; border-radius: 6px; padding: 0 3px;
+  background: var(--active); color: var(--fg); font-size: 9px; font-weight: 700; }
 .app { --app-icon-size: min(calc(var(--tile-h) * .62), calc(var(--tile-h) - 11px));
   position: relative; justify-content: center; gap: 8px; min-width: var(--tile-h); padding: 0 calc(var(--tile-h) * .125); max-width: 220px;
   border-radius: calc(var(--tile-h) * .36); corner-shape: squircle; border: 1px solid var(--tile-line); box-shadow: none;

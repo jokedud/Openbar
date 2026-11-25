@@ -46,7 +46,7 @@ let settingsStore, dataStore, devinStore, taskbarRecovery, companion, windowPrev
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
-let overflowApps = [];
+let overflowItems = [];
 let devinPanelSize = null;
 let batteryNative, batteryEstimate;
 const state = {
@@ -539,17 +539,25 @@ PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
 PANEL_SIZES.overflow = [352, 440];
+PANEL_SIZES.tabOverflow = PANEL_SIZES.overflow;
+const isFolderPanel = (widget) => widget === 'overflow' || widget === 'tabOverflow';
 
-function togglePanel(widget, anchorX, apps) {
+function closePanel() {
+  if (panel && !panel.isDestroyed()) panel.hide();
+  panelWidget = null;
+  broadcast('panel', null);
+}
+
+function togglePanel(widget, anchorX, items) {
   windowPreview?.hide();
   if (panelWidget === 'battery') stopBatteryEstimate();
-  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
+  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { closePanel(); return; }
   const power = widget === 'battery' ? batteryNative?.read() : null;
   const [w, maxH] = power?.present === false ?
     [PANEL_SIZES.battery[0], 266] : PANEL_SIZES[widget] || [360, 420];
-  overflowApps = widget === 'overflow' ? apps : [];
-  const preferredH = widget === 'overflow' ? Math.min(maxH,
-    60 + overflowApps.reduce((height, { hwnds }) => height + 38 * (hwnds.length > 1 ? hwnds.length + 1 : 1), 0)) : maxH;
+  overflowItems = isFolderPanel(widget) ? items : [];
+  const preferredH = isFolderPanel(widget) ? Math.min(maxH, 60 + 76 * Math.ceil(items.length / 3) +
+    (widget === 'overflow' && items.some(({ hwnds }) => hwnds.length > 1) ? 152 : 0)) : maxH;
   const viewport = bar.getBounds();
   const bb = padBounds(viewport, -barShadowPadding());
   const db = screen.getDisplayMatching(bb).bounds;
@@ -597,7 +605,7 @@ function fitDevinPanel(e, contentHeight) {
 
 function openSettings(tab) {
   windowPreview?.hide();
-  if (['bluetooth', 'battery', 'overflow'].includes(panelWidget)) { panelWidget = null; broadcast('panel', null); }
+  if (['bluetooth', 'battery'].includes(panelWidget) || isFolderPanel(panelWidget)) { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
   settingsWin = new BrowserWindow({
@@ -826,13 +834,20 @@ function registerIpc() {
   ipcMain.handle('wifi:status', (e) => fromNetworkPanel(e) ? networkControls().status() : null);
   ipcMain.handle('wifi:set-radio', (e, enabled) => fromNetworkPanel(e) && networkControls().setRadio(enabled));
   ipcMain.handle('wifi:open', (e, target) => fromNetworkPanel(e) && networkControls().open(target));
-  ipcMain.handle('panel:toggle', (e, widget, x, apps) => {
-    if (widget === 'overflow' && (e.sender !== bar?.webContents || !Array.isArray(apps) || !apps.length)) return;
-    togglePanel(widget, x, apps);
+  ipcMain.handle('panel:toggle', (e, widget, x, items) => {
+    if (isFolderPanel(widget) && (e.sender !== bar?.webContents || !Array.isArray(items) || !items.length)) return;
+    togglePanel(widget, x, items);
   });
-  ipcMain.handle('panel:overflow', (e) => panelWidget === 'overflow' && e.sender === panel?.webContents ? overflowApps : []);
+  ipcMain.handle('panel:overflow', (e, widget) => isFolderPanel(widget) && widget === panelWidget &&
+    e.sender === panel?.webContents ? overflowItems : []);
+  ipcMain.handle('panel:select-tab', (e, id) => {
+    if (panelWidget !== 'tabOverflow' || e.sender !== panel?.webContents ||
+        !overflowItems.some((item) => item.id === id) || (id !== '' && !S().customTabs.some((tab) => tab.id === id))) return;
+    closePanel();
+    if (bar && !bar.isDestroyed()) bar.webContents.send('bar:select-tab', id);
+  });
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
-  ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
+  ipcMain.handle('panel:close', closePanel);
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));
   ipcMain.handle('bar:width', (_e, w) => { if (Math.abs(w - lastContentWidth) > 2) { lastContentWidth = w; if (S().layout === 'pill') layoutBar(); } });
   ipcMain.handle('pomodoro', (_e, action) => pomodoroAction(action));

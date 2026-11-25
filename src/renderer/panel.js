@@ -367,43 +367,65 @@ function unmountVolumePanel() {
   stopVolumePanel = null;
 }
 
-function overflowIcon(src) {
+function overflowIcon(src, fallback) {
   return h('span', { class: 'overflow-icon', 'aria-hidden': 'true' },
-    src ? h('img', { src, alt: '' }) : icon('desktop', 16));
+    src ? h('img', { src, alt: '' }) : fallback || icon('desktop', 22));
 }
 
-function overflowRow(label, src, channel, ...args) {
-  return h('button', { class: 'overflow-row', title: label, onclick: async () => {
+function overflowButton(className, label, image, onclick) {
+  return h('button', { class: className, title: label, onclick }, image, h('span', { class: 'ellipsis' }, label));
+}
+
+function overflowApp(className, label, src, channel, ...args) {
+  return overflowButton(className, label, overflowIcon(src), async () => {
     await api.invoke('panel:close');
     return api.invoke(channel, ...args);
-  } }, overflowIcon(src), h('span', { class: 'ellipsis' }, label));
+  });
 }
 
 async function drawOverflow() {
-  const items = await api.invoke('panel:overflow');
-  if (widget !== 'overflow') return;
+  const drawing = widget;
+  const items = await api.invoke('panel:overflow', drawing);
+  if (widget !== drawing) return;
+  const grid = h('div', { class: 'overflow-grid' });
+  if (drawing === 'tabOverflow') {
+    const tabs = new Map(OB.settings.customTabs.map((tab) => [tab.id, tab.name]));
+    tabs.set('', 'Default widgets');
+    for (const { id } of items) {
+      const label = tabs.get(id);
+      if (!label) continue;
+      const image = overflowIcon(null, id ? h('span', { class: 'overflow-initial' }, label[0]) : icon('windows', 22));
+      grid.append(overflowButton('overflow-cell', label, image, () => api.invoke('panel:select-tab', id)));
+    }
+    setHead('More tabs');
+    $('body').replaceChildren(grid.childElementCount ? grid : empty('No more tabs'));
+    return;
+  }
   const windows = new Map((OB.state.windows || []).map((w) => [w.hwnd, w]));
-  const list = h('div', { class: 'overflow-list' });
   for (const { label, icon: src, hwnds, pin } of items) {
     const running = hwnds.map((hwnd) => windows.get(hwnd)).filter(Boolean);
-    const row = (w) => overflowRow(w.title, w.icon || src, 'win:action', w.hwnd, 'focus');
+    const entry = (w, className) => overflowApp(className, w.title, w.icon || src, 'win:action', w.hwnd, 'focus');
     if (running.length > 1) {
-      list.append(h('section', { class: 'overflow-group', 'aria-label': label },
-        h('div', { class: 'overflow-group-title' }, overflowIcon(src), h('span', { class: 'ellipsis' }, label)),
-        h('div', { class: 'overflow-nested' }, running.map(row))));
-    } else if (running.length) list.append(row(running[0]));
-    else if (pin) list.append(overflowRow(pin.name, src, 'launch', pin));
+      const name = pin?.name || running[0].exe.replace(/\.exe$/i, '');
+      grid.append(h('details', { class: 'overflow-group', 'aria-label': label },
+        h('summary', { class: 'overflow-cell', title: label }, overflowIcon(src),
+          h('span', { class: 'ellipsis' }, name), h('span', { class: 'overflow-count' }, running.length)),
+        h('div', { class: 'overflow-nested' }, running.map((w) => entry(w, 'overflow-row')))));
+    } else if (running.length) grid.append(entry(running[0], 'overflow-cell'));
+    else if (pin) grid.append(overflowApp('overflow-cell', pin.name, src, 'launch', pin));
   }
   setHead('More apps');
-  $('body').replaceChildren(list.childElementCount ? list : empty('No more apps'));
+  $('body').replaceChildren(grid.childElementCount ? grid : empty('No more apps'));
 }
+
+const isFolderPanel = (name) => name === 'overflow' || name === 'tabOverflow';
 
 function animateIn() {
   const el = $('panel');
   devinSizeObserver?.disconnect();
   devinSizeObserver = null;
   el.dataset.widget = widget || '';
-  if (widget === 'overflow') {
+  if (isFolderPanel(widget)) {
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-labelledby', 'title');
   } else {
@@ -433,7 +455,7 @@ function animateIn() {
   el.classList.add('enter');
 }
 async function draw(force) {
-  if (widget === 'overflow') return force === 'switch' ? drawOverflow() : undefined;
+  if (isFolderPanel(widget)) return force === 'switch' ? drawOverflow() : undefined;
   if (widget === 'network' && force !== 'switch') return;
   if (['brightness', 'battery'].includes(widget) && force !== 'switch') return;
   if (widget === 'volume') {
@@ -458,7 +480,7 @@ async function draw(force) {
 }
 OB.init().then(() => {
   observeSurface($('panel'));
-  draw(['devin', 'bluetooth', 'brightness', 'network', 'volume', 'battery', 'overflow'].includes(widget) ? 'switch' : true).then(animateIn);
+  draw(isFolderPanel(widget) || ['devin', 'bluetooth', 'brightness', 'network', 'volume', 'battery'].includes(widget) ? 'switch' : true).then(animateIn);
   OB.on((kind, patch) => { if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic(); draw(kind === 'settings'); });
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
   api.on('volume:hidden', unmountVolumePanel);

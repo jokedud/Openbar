@@ -15,12 +15,14 @@ if (process.versions.electron) {
 
   test('dock and custom tabs compact apps, expose hidden windows and restore labels when they fit', async () => {
     const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
-    const { wide, narrow, tab, restored, width, groups, actions, tightTab, fullCenter, crowded } = JSON.parse(stdout);
+    const { wide, narrow, tab, restored, width, groups, actions, tightTab, fullCenter, crowded, tabFolder } = JSON.parse(stdout);
     assert.equal(wide.more, false);
     assert.equal(wide.labels, true);
     assert.ok(wide.firstTile > narrow.firstTile);
     assert.equal(narrow.more, true);
     assert.equal(narrow.labels, false);
+    assert.equal(narrow.preview, 4);
+    assert.match(narrow.badge, /^\+\d+$/);
     assert.equal(tab.more, true);
     assert.equal(tab.labels, false);
     assert.equal(restored.more, false);
@@ -31,6 +33,8 @@ if (process.versions.electron) {
     assert.equal(groups.label, 'Editor.exe: 2 windows');
     assert.deepEqual(groups.nested, ['Window 9 — notes and research', 'Window 10 — notes and research']);
     assert.equal(groups.icons, groups.titles.length);
+    assert.equal(groups.columns, 3);
+    assert.equal(groups.opened, true);
     assert.deepEqual(actions, ['close', [10, 'focus'], 'close'], 'selection closes before focus, and Escape closes');
     assert.equal(tightTab.moreVisible, true, `Overflow button must fit in the selected tab: ${JSON.stringify(tightTab)}`);
     assert.equal(tightTab.rightFits, true, `Right controls must stay inside a crowded pill: ${JSON.stringify(tightTab)}`);
@@ -42,6 +46,13 @@ if (process.versions.electron) {
       assert.equal(result.moreClickable && result.zonesFit, true, `${mode}: ${JSON.stringify(result)}`);
       assert.equal(result.opened, true, `${mode}: More apps opens with hidden windows`);
     }
+    assert.equal(tabFolder.visible, true);
+    assert.equal(tabFolder.preview, 4);
+    assert.match(tabFolder.badge, /^\+\d+$/);
+    assert.equal(tabFolder.title, 'More tabs');
+    assert.deepEqual(tabFolder.shown, tabFolder.clipped);
+    assert.equal(tabFolder.selected, 'tab-12');
+    assert.equal(tabFolder.scrolled, true);
   });
 }
 
@@ -54,21 +65,22 @@ async function measureDock() {
     icon: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   }));
   const actions = [];
-  let width, entries, onClose, onFocus;
-  let onOverflow;
+  let width, entries, onClose, onFocus, onOverflow, onTabs;
+  let customTabs = [{ id: 'work', name: 'Work', items: [{ id: 'apps', kind: 'widget', widget: 'apps' }] }];
   ipcMain.handle('init', () => ({
     settings: {
       layout: 'pill', groupWindows: true, showLabels: true, pinned: [], left: ['apps'], center: [], right: [],
-      customTabs: [{ id: 'work', name: 'Work', items: [{ id: 'apps', kind: 'widget', widget: 'apps' }] }],
+      customTabs,
     },
     data: {},
     state: { windows, windowAppOrder: [...new Set(windows.map((w) => w.exe.toLowerCase()))] },
   }));
   ipcMain.handle('bar:width', (_event, demand) => { width = demand; });
   ipcMain.handle('panel:toggle', (_event, widget, _anchor, items) => {
-    assert.equal(widget, 'overflow');
+    assert.ok(widget === 'overflow' || widget === 'tabOverflow');
     entries = items;
-    onOverflow?.(items);
+    if (widget === 'overflow') onOverflow?.(items);
+    else onTabs?.(items);
   });
   ipcMain.handle('panel:overflow', () => entries);
   ipcMain.handle('panel:close', () => { actions.push('close'); onClose?.(); });
@@ -77,11 +89,15 @@ async function measureDock() {
   const win = new BrowserWindow({
     width: 1700, height: 140, show: false, webPreferences,
   });
+  ipcMain.handle('panel:select-tab', (_event, id) => { win.webContents.send('bar:select-tab', id); });
   await win.loadFile(path.join(src, 'renderer', 'bar.html'));
   const measure = () => win.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
     const label = document.querySelector('.app .label');
+    const button = document.querySelector('.app-more');
     resolve({
-      more: !document.querySelector('.app-more').hidden,
+      more: !button.hidden,
+      preview: button.firstElementChild.childElementCount,
+      badge: button.lastElementChild.textContent,
       labels: getComputedStyle(label).display !== 'none',
       firstTile: label.parentElement.offsetWidth,
     });
@@ -102,11 +118,15 @@ async function measureDock() {
     const check = () => {
       const group = document.querySelector('.overflow-group');
       if (!document.querySelector('#panel.enter') || !group) return requestAnimationFrame(check);
+      group.firstElementChild.click();
+      const entries = [...document.querySelectorAll('button.overflow-cell, .overflow-row')];
       resolve({
         label: group.getAttribute('aria-label'),
-        titles: [...document.querySelectorAll('.overflow-row')].map(row => row.title),
+        titles: entries.map(row => row.title),
         nested: [...group.querySelectorAll('.overflow-nested button')].map(row => row.title),
-        icons: document.querySelectorAll('.overflow-row img').length,
+        icons: entries.filter(row => row.querySelector('img')).length,
+        columns: getComputedStyle(group.parentElement).gridTemplateColumns.split(' ').length,
+        opened: group.open,
       });
     };
     check();
@@ -143,7 +163,7 @@ async function measureDock() {
     const rightWidget = document.querySelector('#right .w').getBoundingClientRect();
     return { zoneWidth: center.clientWidth, barWidth: bar.width,
       moreVisible: !more.hidden && tile.width > 0 && tile.left >= bar.left && tile.right <= bar.right,
-      moreClickable: document.elementFromPoint(tile.x + tile.width / 2, tile.y + tile.height / 2) === more,
+      moreClickable: more.contains(document.elementFromPoint(tile.x + tile.width / 2, tile.y + tile.height / 2)),
       rightFits: rightWidget.left >= tile.right && rightWidget.right <= bar.right };
   })()`);
   const crowded = {};
@@ -177,12 +197,45 @@ async function measureDock() {
       const tile = more.getBoundingClientRect();
       const hit = document.elementFromPoint(tile.x + tile.width / 2, tile.y + tile.height / 2);
       const moreClickable = !more.hidden && tile.width > 0 && tile.left >= bar.left &&
-        tile.right <= bar.right && hit === more;
-      if (moreClickable) await showAppOverflow(more.previousElementSibling, hit);
+        tile.right <= bar.right && more.contains(hit);
+      if (moreClickable) await showAppOverflow(more.previousElementSibling, more);
       return { moreClickable, zonesFit: zones.every((z) => z.left >= bar.left && z.right <= bar.right),
         tileLeft: tile.left, tileRight: tile.right, barRight: bar.right };
     })()`);
     crowded[mode] = { ...result, opened };
   }
-  return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth, groups, actions, tightTab, fullCenter, crowded };
+  customTabs = Array.from({ length: 12 }, (_, i) => ({ id: `tab-${i + 1}`, name: `Workspace ${i + 1}`, items: [] }));
+  const clipped = new Promise(resolve => { onTabs = resolve; });
+  const tabPreview = await win.webContents.executeJavaScript(`(async () => {
+    OB.settings.customTabs = ${JSON.stringify(customTabs)};
+    render();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const button = document.querySelector('.tab-more');
+    const rect = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    const visible = !button.hidden && button.contains(hit);
+    if (visible) button.click();
+    return { visible, preview: button.firstElementChild.childElementCount, badge: button.lastElementChild.textContent };
+  })()`);
+  const tabItems = tabPreview.visible ? await clipped : [];
+  const tabPanel = new BrowserWindow({ show: false, webPreferences });
+  await tabPanel.loadFile(path.join(src, 'renderer', 'panel.html'), { query: { widget: 'tabOverflow' } });
+  const tabGrid = await tabPanel.webContents.executeJavaScript(`new Promise(resolve => {
+    const check = () => {
+      if (!document.querySelector('#panel.enter')) return requestAnimationFrame(check);
+      const cells = [...document.querySelectorAll('button.overflow-cell')];
+      cells.find(cell => cell.title === 'Workspace 12')?.click();
+      resolve({ title: document.getElementById('title').textContent, shown: cells.map(cell => cell.title) });
+    };
+    check();
+  })`);
+  const tabState = await win.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const strip = document.querySelector('.tab-strip');
+    strip.firstElementChild.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 160 }));
+    resolve({ selected: document.getElementById('bar').dataset.customTab, scrolled: strip.scrollLeft > 0 });
+  })))`);
+  const tabFolder = { ...tabPreview, ...tabGrid, ...tabState,
+    clipped: tabItems.map(({ id }) => customTabs.find((tab) => tab.id === id)?.name || 'Default widgets') };
+  return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth,
+    groups, actions, tightTab, fullCenter, crowded, tabFolder };
 }
