@@ -57,7 +57,7 @@ function reserveSpace() {
   const d = screen.getPrimaryDisplay();
   if (!s.reserveSpace) { win32.appBarRemove(barHwnd); appBarRegistered = false; return; }
   if (!appBarRegistered) appBarRegistered = win32.appBarRegister(barHwnd);
-  const thickness = s.height + 2 * s.margin;
+  const thickness = s.height + s.margin;
   const dip = { x: d.bounds.x, y: s.position === 'top' ? d.bounds.y : d.bounds.y + d.bounds.height - thickness, width: d.bounds.width, height: thickness };
   const px = screen.dipToScreenRect(null, dip);
   const rc = win32.appBarSetPos(barHwnd, s.position, { left: px.x, top: px.y, right: px.x + px.width, bottom: px.y + px.height });
@@ -70,8 +70,11 @@ function layoutBar() {
   if (!bar) return;
   const b = barBounds(lastContentWidth);
   const reserved = reserveSpace();
-  // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
-  if (reserved && reserved.height > 0) b.y = reserved.y;
+  // Align the visible dock edge to the work area after Windows positions the strip.
+  if (reserved && reserved.height > 0) {
+    const { margin, position } = S();
+    b.y = position === 'top' ? reserved.y + reserved.height - b.height + margin : reserved.y - margin;
+  }
   bar.setBounds(padBounds(b, barShadowPadding()));
   syncBackdrop(bar);
   bar.setAlwaysOnTop(true, 'screen-saver');
