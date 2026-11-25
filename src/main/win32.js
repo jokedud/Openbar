@@ -41,6 +41,7 @@ const GetWindowTextW = user32.func('int __stdcall GetWindowTextW(intptr_t hWnd, 
 const GetWindowTextLengthW = user32.func('int __stdcall GetWindowTextLengthW(intptr_t hWnd)');
 const GetWindowLongPtrW = user32.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t hWnd, int idx)');
 const GetWindow = user32.func('intptr_t __stdcall GetWindow(intptr_t hWnd, uint32_t cmd)');
+const GetAncestor = user32.func('intptr_t __stdcall GetAncestor(intptr_t hWnd, uint32_t flags)');
 const GetWindowThreadProcessId = user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hWnd, _Out_ uint32_t *pid)');
 const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow()');
 const GetWindowRect = user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)');
@@ -81,6 +82,7 @@ const WS_EX_TOOLWINDOW = 0x80;
 const WS_EX_APPWINDOW = 0x40000;
 const WS_EX_NOACTIVATE = 0x8000000;
 const GW_OWNER = 4;
+const GA_ROOT = 2;
 const DWMWA_CLOAKED = 14;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 const SW_HIDE = 0, SW_MAXIMIZE = 3, SW_SHOWNA = 8, SW_RESTORE = 9, SW_MINIMIZE = 6, SW_SHOW = 5;
@@ -255,7 +257,11 @@ function clickDesktopMouse(button) {
   sendDesktopInput([mouseInput(down), mouseInput(down << 1)]);
 }
 
-function scrollDesktopMouse(steps) { sendDesktopInput([mouseInput(0x0800, steps * 120)]); }
+function scrollDesktopMouse(point, steps) {
+  const hwnd = GetAncestor(WindowFromPoint(point), GA_ROOT);
+  if (!hwnd || !activateDesktopInputTarget(hwnd, processId(hwnd))) throw new Error('Could not focus the desktop scroll target');
+  sendDesktopInput([mouseInput(0x0800, steps * 120)]);
+}
 
 function keyInputs(wVk, wScan, flags) {
   return [flags, flags | 0x02].map((dwFlags) => ({ type: 1, u: { ki: { wVk, wScan, dwFlags, time: 0, dwExtraInfo: 0 } } }));

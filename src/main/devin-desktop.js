@@ -119,7 +119,7 @@ function createWindowsDesktop({ screen, desktopCapturer, win32, target }) {
           current.scaleFactor !== display.scaleFactor) throw new Error('Primary display changed');
       win32.moveDesktopMouse(pt, name !== 'mouse_move');
       if (name === 'mouse_click') win32.clickDesktopMouse(args.button);
-      if (name === 'mouse_scroll') win32.scrollDesktopMouse(args.steps);
+      if (name === 'mouse_scroll') win32.scrollDesktopMouse(pt, args.steps);
     } };
   };
 }
