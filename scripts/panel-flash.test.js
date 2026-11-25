@@ -80,10 +80,12 @@ app.whenReady().then(async () => {
     };
   })()\`);
 
-  // Switch panel to network and verify panel:ready arrives only after DOM switches.
+  // Switch panel to network while hidden at opacity 0 (matching main.js) and verify panel:ready arrives after paint.
   const boundsBeforeSwitch = boundsEvents.length;
+  win.setOpacity(0);
+  win.showInactive();
   win.webContents.send('panel:widget', 'network', 7);
-  await new Promise((r) => setTimeout(r, 120));
+  await new Promise((r) => setTimeout(r, 150));
   const afterSwitch = await win.webContents.executeJavaScript(\`(() => ({
     widgetAttr: document.getElementById('panel').dataset.widget,
     title: document.getElementById('title').textContent,

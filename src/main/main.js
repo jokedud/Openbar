@@ -171,7 +171,7 @@ function syncBackdrop(win) {
   const backdrop = backdrops.get(win);
   if (!backdrop) return;
   const { window, hwnd, surface } = backdrop;
-  if (glassMode === 'off' || !surface || !win.isVisible()) {
+  if (glassMode === 'off' || !surface || !win.isVisible() || win.getOpacity() === 0) {
     backdrop.lastSync = null;
     if (window.isVisible()) window.hide();
     return;
@@ -551,6 +551,7 @@ function showPanel(seq) {
   if (seq !== panelShowSeq || !panel || panel.isDestroyed() || !panelWidget) return;
   if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
   if (!panel.isVisible()) panel.show();
+  if (panel.getOpacity() !== 1) panel.setOpacity(1);
   panel.focus();
   syncBackdrop(panel);
 }
@@ -606,9 +607,12 @@ function togglePanel(widget, anchorX) {
     if (panel.isVisible()) panel.hide();
     const backdrop = backdrops.get(panel);
     if (backdrop) { backdrop.surface = null; backdrop.lastSync = null; }
+    panel.setOpacity(0);
     panel.setBounds(bounds);
     panelWidget = widget;
     broadcast('panel', widget);
+    panel.show();
+    panel.focus();
     panel.webContents.send('panel:widget', widget, seq);
     panelShowTimer = setTimeout(() => showPanel(seq), 120);
     return;
