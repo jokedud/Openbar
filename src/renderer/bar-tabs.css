@@ -1,7 +1,8 @@
-#dock-tabs { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: 320px; overflow-x: auto; scrollbar-width: none; }
+#dock-tabs, .tab-strip { display: flex; align-items: center; }
+#dock-tabs { position: relative; flex: 0 1 auto; min-width: var(--app-strip-min); max-width: 320px; height: var(--tile-h); }
+[data-layout="full"] #dock-tabs { max-width: min(320px, 30%); }
+.tab-strip { position: relative; min-width: 0; height: 100%; overflow-x: auto; scrollbar-width: none; }
+#dock-tabs:has(.tab-more:not([hidden])) .tab-strip { max-width: calc(100% - var(--app-strip-min)); }
+#dock-tabs .tab-more { position: absolute; top: 0; right: 0; }
 #dock-tabs .w, .dock-shortcut { max-width: 140px; }
 #dock-tabs [aria-pressed="true"] { background: var(--active); }
-#bar[data-custom-tab] #left, [data-layout="full"] #left { overflow-x: auto; scrollbar-width: none; }
-#bar[data-custom-tab] #left > .apps, [data-layout="full"] #left > .apps { flex: none; }
-[data-layout="pill"] #bar[data-custom-tab] { flex: none; width: max-content; max-width: calc(var(--dock-screen-width) - 2 * var(--bar-m)); }
-[data-layout="pill"] #bar[data-custom-tab] #left { flex: 0 1 auto; min-width: 0; }
