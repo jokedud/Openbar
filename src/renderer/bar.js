@@ -169,11 +169,25 @@ function renderZone(zone, names) {
   const cur = [...el.children];
   if (cur.length !== want.length || cur.some((c, i) => c !== want[i])) el.replaceChildren(...want);
 }
+function pillWidth(bar) {
+  const cs = getComputedStyle(bar);
+  const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+  const gap = parseFloat(cs.columnGap || cs.gap) || 0;
+  let w = pad + Math.max(0, bar.children.length - 1) * gap;
+  for (const z of bar.children) {
+    if (!z.childElementCount) continue;
+    const zcs = getComputedStyle(z);
+    const zgap = parseFloat(zcs.columnGap || zcs.gap) || 0;
+    w += Math.max(0, z.childElementCount - 1) * zgap;
+    for (const k of z.children) w += k.scrollWidth;
+  }
+  return Math.ceil(w + 2);
+}
 function render() {
   const s = OB.settings;
   renderZone('left', s.left); renderZone('center', s.center); renderZone('right', s.right);
   const bar = document.getElementById('bar');
-  if (s.layout === 'pill') api.invoke('bar:width', Math.ceil(bar.scrollWidth + 2));
+  if (s.layout === 'pill') api.invoke('bar:width', pillWidth(bar));
 }
 let raf = 0;
 function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }

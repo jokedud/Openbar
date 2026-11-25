@@ -23,8 +23,8 @@ function applyTheme() {
   document.documentElement.dataset.style = s.style || 'glass';
   document.documentElement.dataset.position = s.position || 'bottom';
   document.documentElement.dataset.layout = s.layout || 'full';
-  document.documentElement.style.setProperty('--bar-h', (s.height || 46) + 'px');
-  document.documentElement.style.setProperty('--bar-m', (s.margin || 6) + 'px');
+  document.documentElement.style.setProperty('--bar-h', (s.height != null ? s.height : 46) + 'px');
+  document.documentElement.style.setProperty('--bar-m', (s.margin != null ? s.margin : 6) + 'px');
 }
 
 // ---------- DOM ----------
