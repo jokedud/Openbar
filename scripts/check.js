@@ -17,4 +17,4 @@ for (const f of ['src/renderer/bar.html', 'src/renderer/panel.html', 'src/render
   if (!fs.existsSync(path.join(__dirname, '..', f))) { console.error('missing', f); process.exit(1); }
 }
 console.log(`ok: ${files.length} files`);
-execFileSync(process.execPath, ['--test', path.join(__dirname, 'dock-drag.test.js')], { stdio: 'inherit' });
+execFileSync(process.execPath, ['--test', path.join(__dirname, '*.test.js')], { stdio: 'inherit' });
