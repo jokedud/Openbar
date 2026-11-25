@@ -1,8 +1,6 @@
 'use strict';
 const ical = require('node-ical');
 
-const MAX_OCCURRENCES = 500;
-
 // Fetches iCal feeds (Google / Outlook / iCloud secret links) and expands events for the next 30 days.
 async function fetchCalendar(cal) {
   const url = cal.url.replace(/^webcal:\/\//i, 'https://');
@@ -16,15 +14,27 @@ async function fetchCalendar(cal) {
     if (!ev || ev.type !== 'VEVENT' || !ev.start) continue;
     const dur = (ev.end ? +ev.end : +ev.start) - +ev.start;
     const allDay = ev.datetype === 'date';
-    const push = (start) => out.push({
-      id: `${ev.uid}|${+start}`, title: String(ev.summary || '(no title)'), start: +start, end: +start + dur,
-      allDay, location: ev.location ? String(ev.location) : '', calendar: cal.name || '',
-      url: findMeetingUrl(ev),
-    });
+    const push = (start, src = ev) => {
+      const s = src === ev ? +start : +src.start;
+      const e = src === ev ? s + dur : (src.end ? +src.end : s + dur);
+      if (e < +from || s > +to) return;
+      out.push({
+        id: `${ev.uid}|${+start}`, title: String(src.summary || '(no title)'), start: s, end: e,
+        allDay, location: src.location ? String(src.location) : '', calendar: cal.name || '',
+        url: findMeetingUrl(src),
+      });
+    };
     if (ev.rrule) {
       const excluded = new Set(Object.values(ev.exdate || {}).map((d) => +d));
-      for (const d of ev.rrule.between(from, to, true, (_d, i) => i < MAX_OCCURRENCES)) {
-        if (!excluded.has(+d)) push(d);
+      // rrule-temporal stops runaway rules (e.g. FREQ=SECONDLY) by throwing; skip only that event.
+      let dates = [];
+      try { dates = ev.rrule.between(from, to, true); } catch (_) { continue; }
+      for (const d of dates) {
+        if (excluded.has(+d)) continue;
+        const rec = ev.recurrences || {};
+        const override = allDay ? rec[d.toISOString().slice(0, 10)] : rec[d.toISOString()];
+        if (override && override.status === 'CANCELLED') continue;
+        push(d, override || ev);
       }
     } else if (+ev.start <= +to && +ev.start + dur >= +from) {
       push(ev.start);
