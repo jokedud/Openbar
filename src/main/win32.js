@@ -31,6 +31,7 @@ const GetWindowLongPtrW = user32.func('intptr_t __stdcall GetWindowLongPtrW(intp
 const GetWindow = user32.func('intptr_t __stdcall GetWindow(intptr_t hWnd, uint32_t cmd)');
 const GetWindowThreadProcessId = user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hWnd, _Out_ uint32_t *pid)');
 const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow()');
+const GetWindowRect = user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)');
 const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(intptr_t hWnd)');
 const ShowWindow = user32.func('bool __stdcall ShowWindow(intptr_t hWnd, int cmd)');
 const FindWindowW = user32.func('intptr_t __stdcall FindWindowW(const char16_t *cls, const char16_t *name)');
@@ -153,6 +154,11 @@ function focusWindow(hwnd) {
 function minimizeWindow(hwnd) { return ShowWindow(hwnd, SW_MINIMIZE); }
 function closeWindow(hwnd) { return PostMessageW(hwnd, WM_CLOSE, 0, 0); }
 function foregroundWindow() { return Number(GetForegroundWindow()); }
+function windowBounds(hwnd) {
+  const rect = {};
+  if (!GetWindowRect(hwnd, rect)) return null;
+  return { x: rect.left, y: rect.top, width: rect.right - rect.left, height: rect.bottom - rect.top };
+}
 
 // ---- media / system keys ----
 function sendCombo(vks) {
@@ -257,7 +263,7 @@ function setRoundRegion(hWnd, r) {
 }
 
 module.exports = {
-  listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, IsWindow: (h) => IsWindow(h),
+  listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, windowBounds, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,

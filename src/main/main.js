@@ -9,6 +9,7 @@ const sources = require('./sources');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
+const DevinCompanion = require('./devin-companion');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -17,7 +18,7 @@ const APP_ID = 'xyz.openbar.app';
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 
-let settingsStore, dataStore, devinStore, taskbarRecovery;
+let settingsStore, dataStore, devinStore, taskbarRecovery, companion;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
@@ -74,6 +75,8 @@ function layoutBar() {
   bar.setBounds(b);
   clipGlass(bar, barHwnd, S().margin, barRadius(S().height), b);
   bar.setAlwaysOnTop(true, 'screen-saver');
+  companion?.configure(S(), b);
+  companion?.raise();
 }
 
 // ---------------- glass ----------------
@@ -543,6 +546,7 @@ function saveDevinConfig(config) {
   try {
     devinStore.replace(config);
     devinStore.save(true);
+    companion?.configure(S(), bar?.getBounds(), true);
     return devinConfigInfo();
   } catch {
     devinStore.value = previous;
@@ -550,9 +554,21 @@ function saveDevinConfig(config) {
   }
 }
 
+const storageAvailable = () => safeStorage.isEncryptionAvailable()
+  && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
+
+function listCloudDevinSessions(cursor) {
+  const { encrypted, orgId } = devinStore.get();
+  if (!encrypted) return { error: 'missing' };
+  try {
+    if (!storageAvailable()) return { error: 'storage' };
+    return devin.listSessions({ token: safeStorage.decryptString(Buffer.from(encrypted, 'base64')), orgId }, cursor);
+  } catch {
+    return { error: 'storage' };
+  }
+}
+
 function registerDevinIpc() {
-  const storageAvailable = () => safeStorage.isEncryptionAvailable()
-    && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
   ipcMain.handle('devin:config', devinConfigInfo);
   ipcMain.handle('devin:save', (e, key, organization) => {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
@@ -576,16 +592,7 @@ function registerDevinIpc() {
     return saveDevinConfig({});
   });
   ipcMain.handle('devin:list-local', () => devin.listLocalSessions());
-  ipcMain.handle('devin:list', (_e, cursor) => {
-    const { encrypted, orgId } = devinStore.get();
-    if (!encrypted) return { error: 'missing' };
-    try {
-      if (!storageAvailable()) return { error: 'storage' };
-      return devin.listSessions({ token: safeStorage.decryptString(Buffer.from(encrypted, 'base64')), orgId }, cursor);
-    } catch {
-      return { error: 'storage' };
-    }
-  });
+  ipcMain.handle('devin:list', (_e, cursor) => listCloudDevinSessions(cursor));
   ipcMain.handle('devin:open', async (_e, id) => {
     const url = devin.sessionUrl(id);
     if (!url) return false;
@@ -684,6 +691,14 @@ app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
   devinStore = new JsonFile('devin.json', { encrypted: '', orgId: '' });
+  if (isWin) companion = new DevinCompanion({
+    preload: PRELOAD, listLocal: devin.listLocalSessions, listCloud: listCloudDevinSessions,
+    foregroundBounds: () => {
+      const hwnd = win32.foregroundWindow();
+      const bounds = state.windows.some((w) => w.hwnd === hwnd && !w.minimized) && win32.windowBounds(hwnd);
+      return bounds ? screen.screenToDipRect(null, bounds) : null;
+    },
+  });
   if (isWin) taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
   const firstRun = !require('fs').existsSync(settingsStore.file);
   if (firstRun && isWin) {
@@ -695,6 +710,7 @@ app.whenReady().then(() => {
   }
   if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
   registerIpc();
+  if (companion) ipcMain.on('devin:motion-idle', (e) => companion.hideIfIdle(e.sender));
   createBar();
   createTray();
   applyTaskbar();
@@ -710,6 +726,7 @@ app.whenReady().then(() => {
     every(5 * 60 * 1000, refreshers.crypto),
   ];
   stoppers.push(() => timers.forEach(clearInterval));
+  stoppers.push(() => companion?.stop());
   scheduleCommands();
   if (isWin) stoppers.push(sources.startHelper(onHelper));
 
