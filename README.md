@@ -22,6 +22,7 @@ The builds are not code-signed yet, so Windows SmartScreen may warn you. Click *
 - **Command widgets**: turn any PowerShell command into a live bar widget that refreshes on an interval.
 - **Automations**: pause music before meetings, meeting reminders, umbrella reminder, high-CPU and low-disk alerts, pause music when a focus session starts.
 - **Customization**: top or bottom placement, full-width or floating pill layout, six themes, adjustable height and gap, three widget zones (left, center, right), and app labels. Backup export/import is included.
+- **Custom tabs**: create, rename and reorder tabs in Settings → Custom tabs. Fill each one with live widgets or app, website and folder shortcuts. Switch tabs on the dock to change its left-side items, or select Home to return to your normal layout.
 - **Private**: no accounts and no telemetry. Settings and data stay in `%APPDATA%\OpenBar`.
 
 ## Development
