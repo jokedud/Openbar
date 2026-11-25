@@ -53,15 +53,19 @@ function reserveSpace() {
   const thickness = s.height + 2 * s.margin;
   const dip = { x: d.bounds.x, y: s.position === 'top' ? d.bounds.y : d.bounds.y + d.bounds.height - thickness, width: d.bounds.width, height: thickness };
   const px = screen.dipToScreenRect(null, dip);
-  win32.appBarSetPos(barHwnd, s.position, { left: px.x, top: px.y, right: px.x + px.width, bottom: px.y + px.height });
+  const rc = win32.appBarSetPos(barHwnd, s.position, { left: px.x, top: px.y, right: px.x + px.width, bottom: px.y + px.height });
+  return screen.screenToDipRect(null, { x: rc.left, y: rc.top, width: rc.right - rc.left, height: rc.bottom - rc.top });
 }
 let appBarRegistered = false;
 let lastContentWidth = 0;
 
 function layoutBar() {
   if (!bar) return;
-  bar.setBounds(barBounds(lastContentWidth));
-  reserveSpace();
+  const b = barBounds(lastContentWidth);
+  const reserved = reserveSpace();
+  // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
+  if (reserved && reserved.height > 0) b.y = reserved.y;
+  bar.setBounds(b);
   bar.setAlwaysOnTop(true, 'screen-saver');
 }
 
