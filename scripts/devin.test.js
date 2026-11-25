@@ -1,7 +1,10 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { test } = require('node:test');
+const vm = require('node:vm');
 const { listSessions, sessionUrl } = require('../src/main/devin');
 
 const account = { token: 'cog_test', orgId: 'org-example' };
@@ -64,4 +67,37 @@ test('handles missing setup, API errors, malformed data and no sessions', async 
 test('session links stay on the Devin sessions route', () => {
   assert.equal(sessionUrl('devin-123_abc'), 'https://app.devin.ai/sessions/devin-123_abc');
   for (const id of ['', '../settings', 'run?next=elsewhere', 'https://example.com', null]) assert.equal(sessionUrl(id), null);
+});
+
+test('the Devin bubble stays six pixels from the visible dock at either edge', () => {
+  const display = { x: 0, y: 0, width: 900, height: 800 };
+  const settings = { margin: 10, position: 'bottom' };
+  const app = {
+    requestSingleInstanceLock: () => true, setAppUserModelId() {}, on() {},
+    whenReady: () => new Promise(() => {}),
+  };
+  let bounds;
+  class BrowserWindow {
+    constructor(options) { bounds = options; this.webContents = { send() {} }; }
+    setAlwaysOnTop() {}
+    on() {}
+    once() {}
+    isDestroyed() { return false; }
+    loadFile() {}
+  }
+  const electron = { app, BrowserWindow, screen: { getDisplayMatching: () => ({ bounds: display, workArea: display }) } };
+  const context = vm.createContext({
+    require: (name) => ({ path, electron })[name] || {},
+    __dirname, settings, process: { platform: 'test', on() {} },
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8'), context);
+  vm.runInContext('settingsStore = { get: () => settings }; bar = { getBounds: () => dock, isDestroyed: () => false, webContents: { send() {} } };', context);
+  context.dock = { x: 150, y: 734, width: 600, height: 66 };
+  vm.runInContext("togglePanel('devin', 350)", context);
+  assert.equal(bounds.y + bounds.height, context.dock.y + settings.margin - 6);
+  assert.equal(bounds.x + bounds.width / 2, 500);
+  settings.position = 'top';
+  context.dock.y = 0;
+  vm.runInContext("panel = null; togglePanel('devin', 350)", context);
+  assert.equal(bounds.y, context.dock.y + context.dock.height - settings.margin + 6);
 });

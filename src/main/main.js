@@ -379,7 +379,7 @@ function togglePanel(widget, anchorX) {
   const h = Math.min(preferredH, room - 14);
   let x = Math.round(bb.x + (anchorX || bb.width / 2) - w / 2);
   x = Math.max(db.x + 8, Math.min(x, db.x + db.width - w - 8));
-  const gap = 6;
+  const gap = widget === 'devin' ? 6 - S().margin : 6;
   const y = S().position === 'top' ? bb.y + bb.height + gap : bb.y - h - gap;
   if (!panel || panel.isDestroyed()) {
     panel = new BrowserWindow({
