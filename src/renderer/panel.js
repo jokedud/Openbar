@@ -342,6 +342,16 @@ P.devin = (body) => {
 };
 
 // ---------- router ----------
+let stopBrightness;
+P.brightness = (body) => {
+  setHead('Brightness');
+  stopBrightness = mountBrightness(body);
+};
+function clearBrightness() {
+  stopBrightness?.();
+  stopBrightness = null;
+}
+
 let devinSizeObserver;
 let stopBluetoothPanel;
 P.bluetooth = (body) => {
@@ -381,8 +391,8 @@ function animateIn() {
   el.classList.add('enter');
 }
 async function draw(force) {
-  if (force === 'switch') disposeNetworkPanel();
   if (widget === 'network' && force !== 'switch') return;
+  if (widget === 'brightness' && force !== 'switch') return;
   if (stable.has(widget) && (!force || (['devin', 'bluetooth'].includes(widget) && force !== 'switch'))) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
@@ -394,11 +404,20 @@ async function draw(force) {
 }
 OB.init().then(() => {
   observeSurface($('panel'));
-  draw(['devin', 'bluetooth', 'network'].includes(widget) ? 'switch' : true).then(animateIn);
+  draw(['devin', 'bluetooth', 'brightness', 'network'].includes(widget) ? 'switch' : true).then(animateIn);
   OB.on((kind, patch) => { if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic(); draw(kind === 'settings'); });
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
-  api.on('panel:widget', (w) => { unmountBluetoothPanel(); widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
-  api.on('panel', (w) => { if (w !== 'bluetooth') unmountBluetoothPanel(); });
-  api.on('panel', (w) => { if (w !== 'network') disposeNetworkPanel(); });
+  api.on('panel:widget', (w) => {
+    unmountBluetoothPanel();
+    clearBrightness();
+    disposeNetworkPanel();
+    widget = w; query = ''; sel = 0;
+    draw('switch').then(animateIn);
+  });
+  api.on('panel', (w) => {
+    if (w !== 'bluetooth') unmountBluetoothPanel();
+    if (w !== 'brightness') clearBrightness();
+    if (w !== 'network') disposeNetworkPanel();
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
