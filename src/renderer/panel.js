@@ -381,6 +381,7 @@ async function draw(force) {
   $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
+  observeSurface($('panel'));
   draw(widget === 'devin' ? 'switch' : true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);

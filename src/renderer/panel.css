@@ -1,7 +1,7 @@
 html, body { background: transparent; height: 100%; overflow: hidden; }
-body { padding: 0; }
+body { padding: var(--surface-padding); }
 #panel { height: 100%; display: flex; flex-direction: column; background: var(--panel-bg); border-radius: 18px; overflow: hidden;
-  box-shadow: inset 0 0 0 1px var(--panel-rim), inset 0 1px 0 rgba(255,255,255,.06); }
+  box-shadow: inset 0 0 0 1px var(--panel-rim), inset 0 1px 0 rgba(255,255,255,.06), var(--surface-shadow); }
 #panel.enter { animation: pop .32s cubic-bezier(.32,.72,0,1); transform-origin: 50% 100%; }
 [data-position="top"] #panel.enter { animation-name: popdown; transform-origin: 50% 0; }
 @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.96); } }
@@ -13,7 +13,7 @@ body { padding: 0; }
 #panel[data-widget="devin"] {
   border-radius: 28px;
   background: radial-gradient(ellipse at 25% 0%, rgba(108,145,255,.24), transparent 68%), var(--panel-bg);
-  box-shadow: inset 0 0 0 1px var(--panel-rim), inset 0 2px 0 rgba(255,255,255,.12);
+  box-shadow: inset 0 0 0 1px var(--panel-rim), inset 0 2px 0 rgba(255,255,255,.12), var(--surface-shadow);
   --bubble-shift: 18px;
 }
 [data-position="top"] #panel[data-widget="devin"] { --bubble-shift: -18px; }
