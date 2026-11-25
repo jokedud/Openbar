@@ -176,11 +176,14 @@ function updateAppOverflow(strip) {
   const [apps, more] = strip.children;
   const hidden = apps.scrollWidth <= strip.clientWidth;
   if (more.hidden !== hidden) more.hidden = hidden;
+  const expanded = openPanel === 'overflow';
+  more.classList.toggle('open', expanded);
+  more.setAttribute('aria-expanded', String(expanded));
 }
 
 function appStrip(apps) {
-  const more = h('button', { class: 'w app-more', 'aria-label': 'More apps', 'aria-haspopup': 'menu',
-    title: 'More apps', onclick: () => showAppOverflow(apps) }, '…');
+  const more = h('button', { class: 'w app-more', 'aria-label': 'More apps', 'aria-haspopup': 'dialog',
+    title: 'More apps', onclick: (e) => showAppOverflow(apps, e.currentTarget) }, '…');
   more.hidden = true;
   const strip = h('div', { class: 'app-strip' }, apps, more);
   apps.addEventListener('wheel', (e) => {
@@ -193,26 +196,18 @@ function appStrip(apps) {
   return strip;
 }
 
-async function showAppOverflow(apps) {
-  const pins = OB.settings.pinned, windows = OB.state.windows || [];
+function showAppOverflow(apps, button) {
+  const pins = OB.settings.pinned;
   const items = [];
-  for (const button of apps.children) {
-    if (!button.matches('.app')) continue;
-    if (button.offsetLeft >= apps.scrollLeft &&
-        button.offsetLeft + button.offsetWidth <= apps.scrollLeft + apps.clientWidth) continue;
-    const pin = button.dataset.pin == null ? null : pins[+button.dataset.pin];
-    const hwnds = button.dataset.hwnds?.split(',').map(Number);
-    const wins = pin ? runningFor(pin) : windows.filter((w) => hwnds?.includes(w.hwnd));
-    const label = button.getAttribute('aria-label');
-    const windowItem = (w) => ({ id: 'w' + w.hwnd, label: w.title });
-    if (wins.length > 1) items.push({ label, submenu: wins.map(windowItem) });
-    else if (wins.length) items.push({ id: 'w' + wins[0].hwnd, label });
-    else if (pin) items.push({ id: 'p' + button.dataset.pin, label });
+  for (const tile of apps.children) {
+    if (!tile.matches('.app')) continue;
+    if (tile.offsetLeft >= apps.scrollLeft &&
+        tile.offsetLeft + tile.offsetWidth <= apps.scrollLeft + apps.clientWidth) continue;
+    const pin = pins[+tile.dataset.pin];
+    const hwnds = pin ? runningFor(pin).map((w) => w.hwnd) : tile.dataset.hwnds.split(',').map(Number);
+    items.push({ label: tile.getAttribute('aria-label'), icon: tile.querySelector('img')?.src, pin, hwnds });
   }
-  if (!items.length) return;
-  const picked = await api.invoke('menu', items);
-  if (picked?.startsWith('w')) return api.invoke('win:action', Number(picked.slice(1)), 'focus');
-  if (picked?.startsWith('p')) return api.invoke('launch', pins[Number(picked.slice(1))]);
+  if (items.length) return api.invoke('panel:toggle', 'overflow', centerX(button), items);
 }
 
 function renderZone(zone, names) {
@@ -442,7 +437,11 @@ OB.init().then(() => {
   observeSurface(barEl);
   barEl?.addEventListener?.('mouseleave', () => clearDockPreview(false));
   OB.on(scheduleRender);
-  api.on('panel', (name) => { openPanel = name; scheduleRender(); });
+  api.on('panel', (name) => {
+    openPanel = name;
+    for (const strip of barEl.querySelectorAll('.app-strip')) updateAppOverflow(strip);
+    scheduleRender();
+  });
   setInterval(scheduleRender, 1000);
   render();
 });

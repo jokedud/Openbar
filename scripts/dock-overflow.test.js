@@ -15,7 +15,7 @@ if (process.versions.electron) {
 
   test('dock and custom tabs compact apps, expose hidden windows and restore labels when they fit', async () => {
     const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
-    const { wide, narrow, tab, restored, width, actions } = JSON.parse(stdout);
+    const { wide, narrow, tab, restored, width, groups, actions } = JSON.parse(stdout);
     assert.equal(wide.more, false);
     assert.equal(wide.labels, true);
     assert.ok(wide.firstTile > narrow.firstTile);
@@ -26,13 +26,12 @@ if (process.versions.electron) {
     assert.equal(restored.more, false);
     assert.equal(restored.labels, true);
     assert.equal(restored.width, width, 'pill width is based on uncompressed apps');
-    assert.ok(actions.menu.some(({ id }) => id === 'w8'));
-    assert.ok(actions.menu.every(({ id }) => id !== 'w1'), 'visible apps are not duplicated in the menu');
-    assert.deepEqual(actions.menu.at(-1), { label: 'Editor.exe: 2 windows', submenu: [
-      { id: 'w9', label: 'Window 9 — notes and research' },
-      { id: 'w10', label: 'Window 10 — notes and research' },
-    ] });
-    assert.deepEqual(actions.focus, [10, 'focus']);
+    assert.ok(groups.titles.includes('Window 8 — notes and research'));
+    assert.ok(!groups.titles.includes('Window 1 — notes and research'), 'visible apps are not duplicated in overflow');
+    assert.equal(groups.label, 'Editor.exe: 2 windows');
+    assert.deepEqual(groups.nested, ['Window 9 — notes and research', 'Window 10 — notes and research']);
+    assert.equal(groups.icons, groups.titles.length);
+    assert.deepEqual(actions, ['close', [10, 'focus'], 'close'], 'selection closes before focus, and Escape closes');
   });
 }
 
@@ -42,8 +41,10 @@ async function measureDock() {
   await app.whenReady();
   const windows = Array.from({ length: 10 }, (_, i) => ({
     hwnd: i + 1, exe: i < 8 ? `App${i + 1}.exe` : 'Editor.exe', title: `Window ${i + 1} — notes and research`,
+    icon: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   }));
-  let actions = {}, width;
+  const actions = [];
+  let width, entries, onClose, onFocus;
   ipcMain.handle('init', () => ({
     settings: {
       layout: 'pill', groupWindows: true, showLabels: true, pinned: [], left: ['apps'], center: [], right: [],
@@ -53,11 +54,16 @@ async function measureDock() {
     state: { windows, windowAppOrder: [...new Set(windows.map((w) => w.exe.toLowerCase()))] },
   }));
   ipcMain.handle('bar:width', (_event, demand) => { width = demand; });
-  ipcMain.handle('menu', (_event, items) => { actions.menu = items; return 'w10'; });
-  ipcMain.handle('win:action', (_event, ...args) => { actions.focus = args; });
+  ipcMain.handle('panel:toggle', (_event, widget, _anchor, items) => {
+    assert.equal(widget, 'overflow');
+    entries = items;
+  });
+  ipcMain.handle('panel:overflow', () => entries);
+  ipcMain.handle('panel:close', () => { actions.push('close'); onClose?.(); });
+  ipcMain.handle('win:action', (_event, ...args) => { actions.push(args); onFocus?.(); });
+  const webPreferences = { preload: path.join(src, 'preload.js'), backgroundThrottling: false };
   const win = new BrowserWindow({
-    width: 1700, height: 140, show: false,
-    webPreferences: { preload: path.join(src, 'preload.js'), backgroundThrottling: false },
+    width: 1700, height: 140, show: false, webPreferences,
   });
   await win.loadFile(path.join(src, 'renderer', 'bar.html'));
   const measure = () => win.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -74,8 +80,29 @@ async function measureDock() {
   const narrow = await measure();
   await win.webContents.executeJavaScript("document.querySelector('[data-tab=work]').click(); render()");
   const tab = await measure();
-  await win.webContents.executeJavaScript("showAppOverflow(document.querySelector('.apps'))");
+  await win.webContents.executeJavaScript("showAppOverflow(document.querySelector('.apps'), document.querySelector('.app-more'))");
   win.setContentSize(1700, 140);
   const restored = await measure();
-  return { wide, narrow, tab, restored: { ...restored, width }, width: naturalWidth, actions };
+  const panel = new BrowserWindow({ show: false, webPreferences });
+  await panel.loadFile(path.join(src, 'renderer', 'panel.html'), { query: { widget: 'overflow' } });
+  const groups = await panel.webContents.executeJavaScript(`new Promise(resolve => {
+    const check = () => {
+      const group = document.querySelector('.overflow-group');
+      if (!document.querySelector('#panel.enter') || !group) return requestAnimationFrame(check);
+      resolve({
+        label: group.getAttribute('aria-label'),
+        titles: [...document.querySelectorAll('.overflow-row')].map(row => row.title),
+        nested: [...group.querySelectorAll('.overflow-nested button')].map(row => row.title),
+        icons: document.querySelectorAll('.overflow-row img').length,
+      });
+    };
+    check();
+  })`);
+  const focused = new Promise(resolve => { onFocus = resolve; });
+  await panel.webContents.executeJavaScript("document.querySelector('.overflow-nested button:last-child').click()");
+  await focused;
+  const closed = new Promise(resolve => { onClose = resolve; });
+  await panel.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))");
+  await closed;
+  return { wide, narrow, tab, restored: { ...restored, width }, width: naturalWidth, groups, actions };
 }

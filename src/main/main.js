@@ -46,6 +46,7 @@ let settingsStore, dataStore, devinStore, taskbarRecovery, companion, windowPrev
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
+let overflowApps = [];
 let devinPanelSize = null;
 let batteryNative, batteryEstimate;
 const state = {
@@ -511,14 +512,18 @@ const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 4
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
+PANEL_SIZES.overflow = [352, 440];
 
-function togglePanel(widget, anchorX) {
+function togglePanel(widget, anchorX, apps) {
   windowPreview?.hide();
   if (panelWidget === 'battery') stopBatteryEstimate();
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
   const power = widget === 'battery' ? batteryNative?.read() : null;
-  const [w, preferredH] = power?.present === false ?
+  const [w, maxH] = power?.present === false ?
     [PANEL_SIZES.battery[0], 266] : PANEL_SIZES[widget] || [360, 420];
+  overflowApps = widget === 'overflow' ? apps : [];
+  const preferredH = widget === 'overflow' ? Math.min(maxH,
+    60 + overflowApps.reduce((height, { hwnds }) => height + 38 * (hwnds.length > 1 ? hwnds.length + 1 : 1), 0)) : maxH;
   const viewport = bar.getBounds();
   const bb = padBounds(viewport, -barShadowPadding());
   const db = screen.getDisplayMatching(bb).bounds;
@@ -566,7 +571,7 @@ function fitDevinPanel(e, contentHeight) {
 
 function openSettings(tab) {
   windowPreview?.hide();
-  if (panelWidget === 'bluetooth' || panelWidget === 'battery') { panelWidget = null; broadcast('panel', null); }
+  if (['bluetooth', 'battery', 'overflow'].includes(panelWidget)) { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
   settingsWin = new BrowserWindow({
@@ -795,7 +800,11 @@ function registerIpc() {
   ipcMain.handle('wifi:status', (e) => fromNetworkPanel(e) ? networkControls().status() : null);
   ipcMain.handle('wifi:set-radio', (e, enabled) => fromNetworkPanel(e) && networkControls().setRadio(enabled));
   ipcMain.handle('wifi:open', (e, target) => fromNetworkPanel(e) && networkControls().open(target));
-  ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
+  ipcMain.handle('panel:toggle', (e, widget, x, apps) => {
+    if (widget === 'overflow' && (e.sender !== bar?.webContents || !Array.isArray(apps) || !apps.length)) return;
+    togglePanel(widget, x, apps);
+  });
+  ipcMain.handle('panel:overflow', (e) => panelWidget === 'overflow' && e.sender === panel?.webContents ? overflowApps : []);
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
   ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));

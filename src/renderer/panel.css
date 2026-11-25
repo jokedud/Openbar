@@ -54,6 +54,18 @@ button.devin-session:hover, button.devin-session:focus-visible { background: var
 .kv:last-child { border-bottom: 0; }
 .list-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; }
 .list-item:hover { background: var(--hover); }
+.overflow-list, .overflow-nested { display: grid; gap: 4px; }
+.overflow-row, .overflow-group-title {
+  display: flex; align-items: center; gap: 9px; min-width: 0; height: 34px; padding: 0 9px;
+  border-radius: 10px; text-align: left;
+}
+.overflow-row { width: 100%; background: var(--card); transition: background-color .16s ease-out; }
+.overflow-row:hover, .overflow-row:focus-visible { background: var(--active); }
+.overflow-group { min-width: 0; }
+.overflow-group-title { color: var(--muted); font-weight: 600; }
+.overflow-nested { margin: 4px 0 0 18px; padding-left: 8px; border-left: 1px solid var(--panel-rim); }
+.overflow-icon { display: grid; place-items: center; flex: 0 0 18px; }
+.overflow-icon img { width: 18px; height: 18px; object-fit: contain; }
 .list-item .x { opacity: 0; } .list-item:hover .x { opacity: .7; }
 .done .t { text-decoration: line-through; color: var(--muted); }
 .check { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--muted); display: flex; align-items: center; justify-content: center; flex: none; }
