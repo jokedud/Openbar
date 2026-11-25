@@ -1,6 +1,7 @@
 'use strict';
 // Thin Win32 bindings (via koffi, no native compile step) used by the dock.
 const koffi = require('koffi');
+const { promisify } = require('node:util');
 
 const user32 = koffi.load('user32.dll');
 const kernel32 = koffi.load('kernel32.dll');
@@ -292,31 +293,28 @@ function newAbd(hwnd) {
   return { cbSize: koffi.sizeof(APPBARDATA), hWnd: hwnd || 0, uCallbackMessage: 0, uEdge: 0, rc: { left: 0, top: 0, right: 0, bottom: 0 }, lParam: 0 };
 }
 
-function getTaskbarState() {
-  const abd = newAbd(taskbarWindows()[0]);
-  return Number(SHAppBarMessage(ABM.GETSTATE, abd));
+async function getTaskbarState(hwnd) {
+  return Number(await promisify(SHAppBarMessage.async)(ABM.GETSTATE, newAbd(hwnd)));
 }
 
-function setTaskbarAutoHide(on) {
-  const abd = newAbd(taskbarWindows()[0]);
+async function setTaskbarAutoHide(on, hwnd) {
+  const abd = newAbd(hwnd);
   abd.lParam = on ? ABS_AUTOHIDE : ABS_ALWAYSONTOP;
-  SHAppBarMessage(ABM.SETSTATE, abd);
+  await promisify(SHAppBarMessage.async)(ABM.SETSTATE, abd);
 }
 
-function setTaskbarVisible(visible) {
-  const windows = taskbarWindows();
+async function setTaskbarVisible(visible, windows) {
   for (const h of windows) {
-    if (IsWindowVisible(h) !== visible) ShowWindow(h, visible ? SW_SHOWNA : SW_HIDE);
+    if (IsWindowVisible(h) !== visible) await promisify(ShowWindow.async)(h, visible ? SW_SHOWNA : SW_HIDE);
   }
-  return windows.length > 0 && windows.every((h) => IsWindowVisible(h) === visible);
+  return taskbarVisibilityIs(visible, windows);
 }
 
 function hasTaskbar() {
   return !!FindWindowW('Shell_TrayWnd', null);
 }
 
-function taskbarVisibilityIs(visible) {
-  const windows = taskbarWindows();
+function taskbarVisibilityIs(visible, windows) {
   return windows.length > 0 && windows.every((h) => IsWindowVisible(h) === visible);
 }
 
@@ -374,7 +372,7 @@ module.exports = {
   foregroundWindow, foregroundWindowBounds, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   windowText, moveDesktopMouse, clickDesktopMouse, scrollDesktopMouse, typeDesktopText, pressDesktopKey, activateDesktopInputTarget,
-  getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
+  getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarWindows, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
   isLoginItemMissing,
 };

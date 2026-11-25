@@ -7,7 +7,64 @@ const stable = new Set(['start', 'todos', 'notes', 'devin', 'bluetooth']); // pa
 let networkPanel;
 function disposeNetworkPanel() { networkPanel?.dispose(); networkPanel = null; }
 
-function setHead(title, ...actions) { $('title').textContent = title; $('actions').replaceChildren(...actions); }
+function syncHandlers(prev, next) {
+  if (!prev._obOn && !next._obOn) return;
+  if (prev._obOn) {
+    for (const ev of Object.keys(prev._obOn)) {
+      if (!next._obOn || !(ev in next._obOn)) prev._obOn[ev] = null;
+    }
+  }
+  if (next._obOn) {
+    if (!prev._obOn) prev._obOn = Object.create(null);
+    for (const [ev, fn] of Object.entries(next._obOn)) {
+      if (!(ev in prev._obOn)) prev.addEventListener(ev, (e) => prev._obOn[ev]?.(e));
+      prev._obOn[ev] = fn;
+    }
+  }
+}
+function patchPanelNode(prev, next) {
+  if (!prev || prev.nodeType !== next.nodeType) return next;
+  if (prev.nodeType === 3) {
+    if (prev.nodeValue !== next.nodeValue) prev.nodeValue = next.nodeValue;
+    return prev;
+  }
+  if (prev.nodeType !== 1 || prev.tagName !== next.tagName || prev.namespaceURI !== next.namespaceURI) return next;
+  syncHandlers(prev, next);
+  if (prev.outerHTML === next.outerHTML) {
+    const pKids = prev.childNodes, nKids = next.childNodes;
+    for (let i = 0; i < nKids.length && i < pKids.length; i++) {
+      if (pKids[i].nodeType === 1 && nKids[i].nodeType === 1) patchPanelNode(pKids[i], nKids[i]);
+    }
+    return prev;
+  }
+  for (const attr of [...prev.attributes]) {
+    if (!next.hasAttribute(attr.name)) prev.removeAttribute(attr.name);
+  }
+  for (const attr of next.attributes) {
+    if (prev.getAttribute(attr.name) !== attr.value) prev.setAttribute(attr.name, attr.value);
+  }
+  patchChildren(prev, [...next.childNodes]);
+  return prev;
+}
+function patchChildren(parent, nextKids) {
+  if (!parent.childNodes || typeof parent.appendChild !== 'function') {
+    parent.replaceChildren(...nextKids);
+    return;
+  }
+  for (let i = 0; i < nextKids.length; i++) {
+    const cur = parent.childNodes[i];
+    if (!cur) parent.appendChild(nextKids[i]);
+    else {
+      const patched = patchPanelNode(cur, nextKids[i]);
+      if (patched !== cur) parent.replaceChild(patched, cur);
+    }
+  }
+  while (parent.childNodes.length > nextKids.length) parent.removeChild(parent.lastChild);
+}
+function setHead(title, ...actions) {
+  if ($('title').textContent !== title) $('title').textContent = title;
+  patchChildren($('actions'), actions.filter(Boolean));
+}
 const actionBtn = (ic, title, onclick) => h('button', { class: 'btn icon', title, onclick }, icon(ic, 14));
 const settingsBtn = (tab) => actionBtn('settings', 'Settings', () => api.invoke('settings:open', tab));
 const refreshBtn = (key) => actionBtn('refresh', 'Refresh', () => api.invoke('refresh', key));
@@ -375,10 +432,16 @@ function unmountVolumePanel() {
   stopVolumePanel = null;
 }
 
+let enterBodyTimer = null;
+function clearEnterBody() {
+  if (enterBodyTimer) { clearTimeout(enterBodyTimer); enterBodyTimer = null; }
+  $('panel')?.classList.remove('enter-body');
+}
 function animateIn() {
   const el = $('panel');
   devinSizeObserver?.disconnect();
   devinSizeObserver = null;
+  clearEnterBody();
   el.dataset.widget = widget || '';
   el.classList.remove('enter');
   if (widget === 'devin') {
@@ -391,7 +454,10 @@ function animateIn() {
       height = measured;
       const start = !el.classList.contains('enter');
       api.invoke('panel:fit-devin', height).catch(() => {}).then(() => {
-        if (start && observer === devinSizeObserver) el.classList.add('enter');
+        if (start && observer === devinSizeObserver) {
+          el.classList.add('enter', 'enter-body');
+          enterBodyTimer = setTimeout(clearEnterBody, 600);
+        }
       });
     });
     devinSizeObserver = observer;
@@ -400,7 +466,30 @@ function animateIn() {
     return;
   }
   void el.offsetWidth;
-  el.classList.add('enter');
+  el.classList.add('enter', 'enter-body');
+  enterBodyTimer = setTimeout(clearEnterBody, 600);
+}
+const panelStateKeys = {
+  calendar: ['calendar'],
+  nextEvent: ['calendar'],
+  clock: ['calendar'],
+  weather: ['weather', 'errors'],
+  system: ['system', 'disk'],
+  media: ['media'],
+  github: ['github', 'errors'],
+  crypto: ['crypto', 'errors'],
+  quick: ['commands'],
+};
+const panelDataWidgets = new Set(['pomodoro', 'screenTime']);
+function shouldRedraw(kind, patch) {
+  if (document.hidden) return false;
+  if (kind === 'settings') return true;
+  if (kind === 'data') return panelDataWidgets.has(widget);
+  if (kind === 'state') {
+    const keys = panelStateKeys[widget];
+    return !!(keys && patch && keys.some((k) => k in patch));
+  }
+  return false;
 }
 async function draw(force) {
   if (widget === 'network' && force !== 'switch') return;
@@ -421,30 +510,45 @@ async function draw(force) {
   else if (fn) await fn(body);
   else setHead(widget);
   if (drawing !== widget) return;
-  const scrolled = force === 'switch' ? [] : [...$('body').querySelectorAll('.hours')].map((el) => el.scrollLeft);
-  $('body').replaceChildren(...body.childNodes);
-  $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
+  const container = $('body');
+  if (force === 'switch') {
+    container.replaceChildren(...body.childNodes);
+  } else {
+    clearEnterBody();
+    const scrolled = [...container.querySelectorAll('.hours')].map((el) => el.scrollLeft);
+    patchChildren(container, [...body.childNodes]);
+    container.querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
+  }
 }
 OB.init().then(() => {
-  observeSurface($('panel'));
-  draw(['devin', 'bluetooth', 'brightness', 'network', 'volume', 'battery'].includes(widget) ? 'switch' : true).then(animateIn);
-  OB.on((kind, patch) => { if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic(); draw(kind === 'settings'); });
-  setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
+  const surfaceSync = observeSurface($('panel'));
+  draw('switch').then(() => { animateIn(); surfaceSync.syncBounds(); });
+  OB.on((kind, patch) => {
+    if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic();
+    if (shouldRedraw(kind, patch)) draw(kind === 'settings');
+  });
+  setInterval(() => { if (!document.hidden && ['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
   api.on('volume:hidden', unmountVolumePanel);
-  api.on('panel:widget', (w) => {
+  api.on('panel:widget', (w, seq) => {
     unmountBluetoothPanel();
     clearBrightness();
     disposeNetworkPanel();
     unmountVolumePanel();
     unmountBatteryPanel();
     widget = w; query = ''; sel = 0;
-    draw('switch').then(() => { if (widget === w) animateIn(); });
+    draw('switch').then(() => {
+      if (widget !== w) return;
+      animateIn();
+      surfaceSync.syncBounds();
+      if (seq != null) api.send('panel:ready', seq);
+    });
   });
   api.on('panel', (w) => {
     if (w !== 'bluetooth') unmountBluetoothPanel();
     if (w !== 'brightness') clearBrightness();
     if (w !== 'network') disposeNetworkPanel();
     if (w !== 'battery') unmountBatteryPanel();
+    if (!w) { clearEnterBody(); $('panel').classList.remove('enter'); }
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
