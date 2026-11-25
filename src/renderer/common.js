@@ -24,7 +24,7 @@ function applyTheme() {
   document.documentElement.dataset.position = s.position || 'bottom';
   document.documentElement.dataset.layout = s.layout || 'full';
   document.documentElement.dataset.glass = OB.state.glass || 'off';
-  const height = s.height != null ? s.height : 46;
+  const height = s.height != null ? s.height : 54;
   document.documentElement.style.setProperty('--bar-h', height + 'px');
   document.documentElement.style.setProperty('--bar-r', Math.round(height * 0.3) + 'px');
   document.documentElement.style.setProperty('--bar-m', (s.margin != null ? s.margin : 6) + 'px');
