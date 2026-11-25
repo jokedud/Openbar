@@ -17,6 +17,7 @@ const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 const { createBattery, openPowerSettings } = require('./battery');
 const { WindowPreviewController } = require('./window-preview');
 const windowPoll = require('./window-poll');
+const { SurfaceInput } = require('./surface-input');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -153,10 +154,12 @@ function createSurfaceWindow(options) {
   applyBackdrop(hwnd, glassMode);
   // The native blur is clipped inside the CSS rim; the visible edge and shadow are never region-clipped.
   const win = new BrowserWindow({ ...options, parent: backdrop });
-  backdrops.set(win, { window: backdrop, hwnd, surface: null });
+  const layers = { window: backdrop, hwnd, surface: null };
+  const input = layers.input = new SurfaceInput(win, () => screen.getCursorScreenPoint(), () => layers.surface);
+  backdrops.set(win, layers);
   win.on('show', () => syncBackdrop(win));
-  win.on('hide', () => backdrop.hide());
-  win.once('closed', () => { if (!backdrop.isDestroyed()) backdrop.destroy(); });
+  win.on('hide', () => { input.stop(); backdrop.hide(); });
+  win.once('closed', () => { input.stop(); if (!backdrop.isDestroyed()) backdrop.destroy(); });
   return win;
 }
 
@@ -193,7 +196,7 @@ function registerSurfaceIpc() {
   });
   ipcMain.on('surface:mouse', (e, overPadding) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    if (backdrops.has(win)) win.setIgnoreMouseEvents(overPadding === true, { forward: true });
+    backdrops.get(win)?.input.update(overPadding === true);
   });
 }
 

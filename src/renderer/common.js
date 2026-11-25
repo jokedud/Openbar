@@ -43,6 +43,7 @@ function observeSurface(surface) {
   new MutationObserver(reportBounds).observe(surface, { attributes: true, attributeFilter: ['data-widget'] });
 
   let overPadding = false;
+  api.on('surface:mouse-reset', () => { overPadding = false; });
   function setOverPadding(next) {
     if (overPadding === next) return;
     overPadding = next;
