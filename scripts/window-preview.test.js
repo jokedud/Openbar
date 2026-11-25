@@ -199,7 +199,10 @@ test('win32 DWM thumbnail wrappers encode packed properties and return handles',
     DwmQueryThumbnailSourceSize: (id, size) => { calls.push(['size', id]); size.cx = 1600; size.cy = 900; return 0; },
     DwmUpdateThumbnailProperties: (id, props) => { calls.push(['upd', id, props]); return 0; },
     DwmUnregisterThumbnail: (id) => { calls.push(['unreg', id]); return 0; },
+    ShowWindow: (hwnd, cmd) => { calls.push(['show', hwnd, cmd]); return true; },
     ShowWindowAsync: (hwnd, cmd) => { calls.push(['showAsync', hwnd, cmd]); return true; },
+    IsIconic: (hwnd) => hwnd === 55,
+    SetForegroundWindow: (hwnd) => { calls.push(['fg', hwnd]); return true; },
     IsZoomed: (hwnd) => hwnd === 55,
   };
   const packedNames = [];
@@ -224,5 +227,6 @@ test('win32 DWM thumbnail wrappers encode packed properties and return handles',
   assert.equal(w32.minimizeWindow(55), true);
   assert.equal(w32.maximizeWindow(55), true);
   assert.equal(w32.restoreWindow(55), true);
-  assert.deepEqual(calls.slice(-3), [['showAsync', 55, 6], ['showAsync', 55, 3], ['showAsync', 55, 9]]);
+  assert.equal(w32.focusWindow(55, { restore: false }), true);
+  assert.deepEqual(calls.slice(-4), [['showAsync', 55, 6], ['showAsync', 55, 3], ['showAsync', 55, 9], ['fg', 55]]);
 });

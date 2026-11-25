@@ -161,8 +161,8 @@ function listTaskbarWindows(excludePids = new Set()) {
   return out;
 }
 
-function focusWindow(hwnd) {
-  if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+function focusWindow(hwnd, { restore = true } = {}) {
+  if (restore && IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
   if (SetForegroundWindow(hwnd)) return true;
   // Synthesising an ALT tap lifts the foreground lock when we are not the active process.
   keybd_event(0x12, 0, 0, 0);

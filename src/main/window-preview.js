@@ -376,11 +376,11 @@ class WindowPreviewController {
       this.hide();
     } else if (action === 'restore') {
       this.win32.restoreWindow(h);
-      this.win32.focusWindow(h);
+      this.win32.focusWindow(h, { restore: false });
       this.hide();
     } else if (action === 'maximize') {
       this.win32.maximizeWindow(h);
-      this.win32.focusWindow(h);
+      this.win32.focusWindow(h, { restore: false });
       this.hide();
     } else if (action === 'minimize') {
       this.win32.minimizeWindow(h);
