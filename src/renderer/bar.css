@@ -1,6 +1,6 @@
 html, body { background: transparent; overflow: hidden; height: 100%; user-select: none; }
 body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc(var(--tile-h) * .275); }
-#bar { --dock-gap: 3px; --app-strip-min: calc(var(--tile-h) + var(--dock-gap));
+#bar { --dock-gap: 3px; --separator-width: 3px; --app-strip-min: calc(var(--tile-h) + var(--dock-gap));
   position: relative; height: var(--bar-h); display: flex; align-items: center; gap: var(--dock-gap); padding: var(--dock-gap); background: var(--bg);
   border-radius: var(--bar-r); overflow: hidden; animation: rise .5s cubic-bezier(.32,.72,0,1) both;
   box-shadow: inset 0 0 0 1px var(--bar-rim), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -10px 24px rgba(0,0,0,.28), inset 0 10px 24px rgba(255,255,255,.04), var(--surface-shadow); }
@@ -13,6 +13,7 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 .zone:not(:empty) { min-width: var(--widget-zone-min, 0px); }
 .zone:has(.app-strip .app) { min-width: var(--app-zone-min); }
 .widget-strip { min-width: var(--widget-strip-min, 0px); }
+:is(.zone, .widget-strip):has(> .sep):not(:has(> :not(.sep))) { min-width: max-content; }
 #center { justify-content: safe center; }
 #right { justify-content: safe flex-end; }
 [data-layout="full"] :is(#left, #right) { flex: 1 1 0; }
@@ -69,7 +70,7 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 .app .count { position: absolute; top: 0; right: 0; min-width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 9px; font-weight: 700;
   background: var(--bad); color: #fff; border-radius: 7px; padding: 0 3px; }
 .app.dragging { opacity: .4; }
-.sep { width: 3px; flex: none; }
+.sep { width: var(--separator-width); flex: none; }
 .meter { width: 44px; height: 4px; border-radius: 2px; background: var(--hover); overflow: hidden; }
 .meter > i { display: block; height: 100%; border-radius: 2px; background: var(--good); }
 .art { width: calc(var(--tile-h) - 12px); height: calc(var(--tile-h) - 12px); border-radius: 8px; object-fit: cover; }

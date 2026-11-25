@@ -59,6 +59,7 @@ if (process.versions.electron) {
     assert.deepEqual(dynamic.crowded, { compact: true, more: true, media: 'none' });
     assert.deepEqual(dynamic.expanded, { compact: false, more: false, media: 'flex' });
     assert.deepEqual(dynamic.stopped, dynamic.idle);
+    assert.deepEqual(dynamic.separator, { compact: false, controls: 'flex', separatorFits: true });
   });
 }
 
@@ -280,7 +281,28 @@ async function measureDock() {
   const expanded = await dynamicState();
   sendWindows(shortWindows, null);
   const stopped = await dynamicState();
+  await win.webContents.executeJavaScript(`OB.settings.left = ['apps']; render();`);
+  sendWindows(shortWindows, playing);
+  await dynamicState();
+  const separatorFits = await win.webContents.executeJavaScript(`(() => {
+    const bar = document.getElementById('bar');
+    const body = getComputedStyle(document.body);
+    const width = naturalDockWidth(bar, false) + parseFloat(body.paddingLeft) + parseFloat(body.paddingRight);
+    OB.settings.left = ['sep', 'apps'];
+    render();
+    const sep = bar.querySelector('#left .sep');
+    return Math.ceil(width + sep.offsetWidth + parseFloat(getComputedStyle(sep.parentNode).columnGap) + 4);
+  })()`);
+  win.setContentSize(separatorFits, 140);
+  await dynamicState();
+  const separator = await win.webContents.executeJavaScript(`(() => {
+    const bar = document.getElementById('bar');
+    const sep = bar.querySelector('#left .sep');
+    return { compact: bar.hasAttribute('data-compact-widgets'),
+      controls: getComputedStyle(bar.querySelector('[data-media="playpause"]')).display,
+      separatorFits: sep.parentNode.offsetWidth === sep.offsetWidth };
+  })()`);
   return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth,
     groups, actions, tightTab, fullCenter, crowded, tabFolder,
-    dynamic: { idle, playing: withAudio, crowded: withMoreWindows, expanded, stopped } };
+    dynamic: { idle, playing: withAudio, crowded: withMoreWindows, expanded, stopped, separator } };
 }

@@ -314,6 +314,9 @@ function groupZoneWidgets(el, tiles) {
   flushWidgets();
   return groups;
 }
+function separatorCount(group) {
+  return [...group.children].every((child) => child.className === 'sep') ? group.childElementCount : 0;
+}
 function renderZone(zone, names) {
   if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
@@ -342,8 +345,13 @@ function renderZone(zone, names) {
   cache.set(zone, next);
   const groups = groupZoneWidgets(el, want);
   const appCount = groups.filter((group) => group.className === 'app-strip').length;
-  if (appCount) el.style.setProperty('--app-zone-min', `calc(${appCount} * var(--app-strip-min) +
-    ${groups.length - appCount} * var(--widget-strip-min, 0px) + ${groups.length - 1} * var(--dock-gap))`);
+  if (appCount) {
+    const separators = groups.map(separatorCount).filter(Boolean);
+    const count = separators.reduce((sum, n) => sum + n, 0);
+    el.style.setProperty('--app-zone-min', `calc(${appCount} * var(--app-strip-min) +
+      ${groups.length - appCount - separators.length} * var(--widget-strip-min, 0px) +
+      ${count} * var(--separator-width) + ${groups.length - 1 + count - separators.length} * var(--dock-gap))`);
+  }
   reconcileChildren(el, groups);
 }
 function naturalDockWidth(bar, pill) {
@@ -367,21 +375,31 @@ function naturalDockWidth(bar, pill) {
   return Math.ceil(w);
 }
 function reserveWidgetSpace(bar, available) {
-  let folders = 0, widgetStrips = 0, widgetZones = 0;
+  let folders = 0, widgetStrips = 0, widgetZones = 0, separators = 0;
   let gaps = bar.childElementCount + 1;
+  function reserveSeparators(group) {
+    const count = separatorCount(group);
+    if (!count) return false;
+    separators += count;
+    gaps += count - 1;
+    return true;
+  }
   for (const zone of bar.children) {
     if (zone.id === 'dock-tabs') { folders++; continue; }
     const apps = zone.querySelectorAll('.app-strip').length;
     if (apps) {
       folders += apps;
       gaps += zone.childElementCount - 1;
-      widgetStrips += zone.childElementCount - apps;
-    } else if (zone.childElementCount) widgetZones++;
+      for (const strip of zone.children) {
+        if (strip.className === 'widget-strip' && !reserveSeparators(strip)) widgetStrips++;
+      }
+    } else if (zone.childElementCount && !reserveSeparators(zone)) widgetZones++;
   }
   const tracks = widgetStrips + widgetZones;
   if (!tracks) return;
 
-  const budget = `calc(${available}px - ${folders} * var(--app-strip-min) - ${gaps} * var(--dock-gap))`;
+  const budget = `calc(${available}px - ${folders} * var(--app-strip-min) -
+    ${separators} * var(--separator-width) - ${gaps} * var(--dock-gap))`;
   const share = `clamp(0px, calc(${budget} / ${tracks}), var(--tile-h))`;
   const mixed = widgetStrips ? `clamp(${share}, calc((${budget} - ${widgetZones / 2} * ${share}) / ${widgetStrips}), var(--tile-h))` : '0px';
   bar.style.setProperty('--widget-strip-min', mixed);
