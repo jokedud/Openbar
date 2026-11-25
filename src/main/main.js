@@ -568,6 +568,7 @@ function registerDevinIpc() {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
     return saveDevinConfig({});
   });
+  ipcMain.handle('devin:list-local', () => devin.listLocalSessions());
   ipcMain.handle('devin:list', (_e, cursor) => {
     const { encrypted, orgId } = devinStore.get();
     if (!encrypted) return { error: 'missing' };

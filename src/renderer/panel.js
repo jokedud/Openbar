@@ -288,14 +288,36 @@ P.devin = (body) => {
   const list = h('div', { class: 'devin-list' });
   const message = h('div', { class: 'devin-message muted', role: 'status' });
   const more = h('button', { class: 'btn', hidden: true }, 'Load more');
-  const seen = new Set();
+  const sessions = new Map();
   let next = null, request = 0;
+  const render = () => {
+    const ordered = [...sessions.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    list.replaceChildren(...ordered.map((session) => {
+      const status = session.local ? 'Local' : session.status;
+      const time = session.updatedAt == null ? null : new Date(session.updatedAt);
+      const attrs = { class: 'devin-session' };
+      if (!session.local) attrs.onclick = async () => {
+        if (!await api.invoke('devin:open', session.id).catch(() => false)) message.textContent = 'Could not open this session in your browser.';
+      };
+      return h(session.local ? 'div' : 'button', attrs,
+        h('div', { class: 'devin-session-copy' }, h('strong', {}, session.title), h('span', { class: 'muted' },
+          time ? `Updated ${time.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Update time unavailable')),
+        h('span', { class: `devin-status ${['running', 'working', 'resuming'].includes(status) ? 'live' : ''}` }, status));
+    }));
+  };
   const load = async (append = false) => {
     const current = ++request;
-    if (!append) { list.replaceChildren(); seen.clear(); next = null; more.hidden = true; }
+    if (!append) { list.replaceChildren(); sessions.clear(); next = null; more.hidden = true; }
     more.disabled = true;
-    message.textContent = 'Loading cloud sessions…';
-    const page = await api.invoke('devin:list', next).catch(() => ({ error: 'unavailable' }));
+    message.textContent = append ? 'Loading cloud sessions…' : 'Loading Devin sessions…';
+    const cloud = api.invoke('devin:list', next).catch(() => ({ error: 'unavailable' }));
+    if (!append) {
+      const local = await api.invoke('devin:list-local').catch(() => []);
+      if (current !== request) return;
+      for (const session of local) sessions.set(session.id, session);
+      render();
+    }
+    const page = await cloud;
     if (current !== request) return;
     more.disabled = false;
     if (page.error) {
@@ -305,25 +327,17 @@ P.devin = (body) => {
     }
     message.textContent = '';
     for (const session of page.sessions) {
-      if (seen.has(session.id)) continue;
-      seen.add(session.id);
-      const status = session.status;
-      const time = session.updatedAt == null ? null : new Date(session.updatedAt);
-      list.append(h('button', { class: 'devin-session', onclick: async () => {
-        if (!await api.invoke('devin:open', session.id).catch(() => false)) message.textContent = 'Could not open this session in your browser.';
-      } },
-      h('div', { class: 'devin-session-copy' }, h('strong', {}, session.title), h('span', { class: 'muted' },
-        time ? `Updated ${time.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Update time unavailable')),
-      h('span', { class: `devin-status ${['running', 'working', 'resuming'].includes(status) ? 'live' : ''}` }, status)));
+      if (!sessions.has(session.id) || sessions.get(session.id).local) sessions.set(session.id, session);
     }
+    render();
     next = page.next;
     more.hidden = next == null;
-    if (!seen.size && more.hidden) message.append(empty('No cloud sessions found.'));
+    if (!sessions.size && more.hidden) message.append(empty('No Devin sessions found.'));
   };
   more.onclick = () => load(true);
   setHead('Devin sessions', actionBtn('refresh', 'Refresh', () => load()), settingsBtn('devin'));
   body.append(h('div', { class: 'devin-content' },
-    h('div', { class: 'devin-label' }, icon('devin', 14), 'CLOUD SESSIONS'), list, message, more));
+    h('div', { class: 'devin-label' }, icon('devin', 14), 'LOCAL & CLOUD SESSIONS'), list, message, more));
   load();
 };
 
