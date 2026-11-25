@@ -859,6 +859,7 @@ function registerPreviewIpc() {
   ipcMain.on('preview:enter-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.enterSurface(); });
   ipcMain.on('preview:leave-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.leaveSurface(); });
   ipcMain.on('preview:slots', (e, slots) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.updateThumbnailSlots(slots); });
+  ipcMain.on('preview:peek', (e, hwnd) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.peekWindow(hwnd); });
   ipcMain.handle('preview:action', (e, hwnd, action) => (windowPreview?.webContentsMatches(e.sender) ? windowPreview.performAction(hwnd, action) : false));
   ipcMain.handle('preview:context-menu', (e, hwnd) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.openContextMenu(hwnd); });
 }
@@ -891,6 +892,7 @@ app.whenReady().then(() => {
     createSurfaceWindow,
     syncBackdrop,
     getBarBounds: () => (bar && !bar.isDestroyed() ? padBounds(bar.getBounds(), -barShadowPadding()) : null),
+    raiseDock: () => { if (bar && !bar.isDestroyed()) bar.setAlwaysOnTop(true, 'screen-saver'); },
     getSettings: S,
     getState: () => state,
     win32,

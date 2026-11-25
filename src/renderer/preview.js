@@ -50,6 +50,7 @@ function closeButton(win) {
     'aria-label': `Close ${win.title || 'window'}`,
     onClick: (e) => {
       e.stopPropagation();
+      api.send('preview:peek', 0);
       const card = e.currentTarget.closest('[data-hwnd]');
       api.invoke('preview:action', Number(card?.dataset.hwnd || win.hwnd), 'close');
     },
@@ -57,18 +58,30 @@ function closeButton(win) {
 }
 
 function attachCardEvents(node) {
+  node.addEventListener('mouseenter', () => {
+    const hwnd = Number(node.dataset.hwnd);
+    if (hwnd > 0) api.send('preview:peek', hwnd);
+  });
+  node.addEventListener('mouseleave', (e) => {
+    if (!e.relatedTarget || !e.relatedTarget.closest?.('.preview-card, .preview-row')) {
+      api.send('preview:peek', 0);
+    }
+  });
   node.addEventListener('click', (e) => {
     if (e.target.closest('.preview-close')) return;
+    api.send('preview:peek', 0);
     api.invoke('preview:action', Number(node.dataset.hwnd), 'focus');
   });
   node.addEventListener('auxclick', (e) => {
     if (e.button === 1) {
       e.preventDefault();
+      api.send('preview:peek', 0);
       api.invoke('preview:action', Number(node.dataset.hwnd), 'close');
     }
   });
   node.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    api.send('preview:peek', 0);
     api.invoke('preview:context-menu', Number(node.dataset.hwnd));
   });
 }
@@ -186,7 +199,10 @@ function renderPreview(payload) {
 }
 
 surface.addEventListener('mouseenter', () => api.send('preview:enter-surface'));
-surface.addEventListener('mouseleave', () => api.send('preview:leave-surface'));
+surface.addEventListener('mouseleave', () => {
+  api.send('preview:peek', 0);
+  api.send('preview:leave-surface');
+});
 
 OB.init().then(() => {
   observeSurface(surface);

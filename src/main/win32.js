@@ -10,7 +10,16 @@ const gdi32 = koffi.load('gdi32.dll');
 const advapi32 = koffi.load('advapi32.dll');
 
 const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
+const POINT = koffi.struct('POINT', { x: 'long', y: 'long' });
 const SIZE = koffi.struct('SIZE', { cx: 'long', cy: 'long' });
+const WINDOWPLACEMENT = koffi.struct('WINDOWPLACEMENT', {
+  length: 'uint32',
+  flags: 'uint32',
+  showCmd: 'uint32',
+  ptMinPosition: POINT,
+  ptMaxPosition: POINT,
+  rcNormalPosition: RECT,
+});
 const DWM_THUMBNAIL_PROPERTIES = koffi.struct('DWM_THUMBNAIL_PROPERTIES', {
   dwFlags: 'uint32',
   rcDestination: RECT,
@@ -42,6 +51,7 @@ const GetWindow = user32.func('intptr_t __stdcall GetWindow(intptr_t hWnd, uint3
 const GetWindowThreadProcessId = user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hWnd, _Out_ uint32_t *pid)');
 const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow()');
 const GetWindowRect = user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)');
+const GetWindowPlacement = user32.func('bool __stdcall GetWindowPlacement(intptr_t hWnd, _Inout_ WINDOWPLACEMENT *lpwndpl)');
 const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(intptr_t hWnd)');
 const BringWindowToTop = user32.func('bool __stdcall BringWindowToTop(intptr_t hWnd)');
 const AttachThreadInput = user32.func('bool __stdcall AttachThreadInput(uint32_t idAttach, uint32_t idAttachTo, bool fAttach)');
@@ -238,6 +248,32 @@ function updateThumbnail(thumbId, { left, top, right, bottom, opacity = 255, vis
   };
   return DwmUpdateThumbnailProperties(thumbId, props) === 0;
 }
+
+const WPF_RESTORETOMAXIMIZED = 0x2;
+function windowBoundsForPeek(hwnd) {
+  if (!hwnd || !IsWindow(hwnd)) return null;
+  const minimized = !!IsIconic(hwnd);
+  if (!minimized) {
+    const rect = {};
+    if (!GetWindowRect(hwnd, rect)) return null;
+    if (rect.right <= rect.left || rect.bottom <= rect.top) return null;
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, minimized: false, restoreToMaximized: false };
+  }
+  if (typeof GetWindowPlacement !== 'function') return null;
+  const wp = {
+    length: koffi.sizeof(WINDOWPLACEMENT),
+    flags: 0, showCmd: 0,
+    ptMinPosition: { x: 0, y: 0 }, ptMaxPosition: { x: 0, y: 0 },
+    rcNormalPosition: { left: 0, top: 0, right: 0, bottom: 0 },
+  };
+  if (!GetWindowPlacement(hwnd, wp)) return null;
+  const r = wp.rcNormalPosition;
+  return {
+    left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+    minimized: true,
+    restoreToMaximized: !!(wp.flags & WPF_RESTORETOMAXIMIZED),
+  };
+}
 function foregroundWindow() { return Number(GetForegroundWindow()); }
 function foregroundWindowBounds(excludePid) {
   const hwnd = foregroundWindow();
@@ -350,7 +386,7 @@ function setRoundRegion(hWnd, { width, height, radius }) {
 
 module.exports = {
   listTaskbarWindows, focusWindow, minimizeWindow, maximizeWindow, restoreWindow, isWindowMaximized, closeWindow,
-  registerThumbnail, unregisterThumbnail, queryThumbnailSourceSize, updateThumbnail,
+  registerThumbnail, unregisterThumbnail, queryThumbnailSourceSize, updateThumbnail, windowBoundsForPeek,
   foregroundWindow, foregroundWindowBounds, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
