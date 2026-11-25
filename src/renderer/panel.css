@@ -86,7 +86,7 @@ button.devin-session:hover, button.devin-session:focus-visible { background: var
   #panel[data-widget="start"] { overflow-y: auto; }
   #panel[data-widget="start"] .head { flex: none; }
   #panel[data-widget="start"] #body { flex: none; overflow: visible; }
-  .launcher-search { position: sticky; top: 0; z-index: 1; background: var(--panel-solid); }
+  .launcher-search { position: sticky; top: 0; z-index: 1; background: var(--bg-solid); }
   .grid-apps { flex: none; overflow: visible; scrollbar-gutter: auto; }
   .tile { scroll-margin-top: 50px; }
 }
