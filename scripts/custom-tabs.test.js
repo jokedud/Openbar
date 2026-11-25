@@ -6,12 +6,12 @@ const test = require('node:test');
 const { runInNewContext } = require('node:vm');
 const { normalizeCustomTabs, shortcutTarget } = require('../src/main/custom-tabs');
 
-test('scrolls crowded full-width Home apps with or without the tab switcher', () => {
+test('scrolls crowded Home zones in both layouts, with or without the tab switcher', () => {
   let onWheel;
   let prevented = 0;
   const tabSwitcher = { isConnected: true };
   const left = {
-    id: 'left', scrollLeft: 0, scrollWidth: 600, clientWidth: 400,
+    id: 'left', scrollLeft: 0, scrollWidth: 600, clientWidth: 400, classList: { contains: () => false },
   };
   const settings = { layout: 'full' };
   runInNewContext(readFileSync(path.join(__dirname, '../src/renderer/bar-tabs.js'), 'utf8'), {
@@ -39,8 +39,8 @@ test('scrolls crowded full-width Home apps with or without the tab switcher', ()
   assert.equal(prevented, 2);
   settings.layout = 'pill';
   onWheel(wheel);
-  assert.equal(left.scrollLeft, 160);
-  assert.equal(prevented, 2);
+  assert.equal(left.scrollLeft, 240);
+  assert.equal(prevented, 3);
 });
 
 test('normalizes persisted tabs without altering tab or item order', () => {

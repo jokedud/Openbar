@@ -286,6 +286,28 @@ function reconcileChildren(el, want) {
     if (el.children[i] !== want[i]) el.insertBefore(want[i], el.children[i] || null);
   }
 }
+function groupZoneWidgets(el, tiles) {
+  if (!tiles.some((tile) => tile.className === 'app-strip')) return tiles;
+  const previous = [...el.children].filter((child) => child.className === 'widget-strip');
+  const groups = [];
+  let widgets = [];
+  function flushWidgets() {
+    if (!widgets.length) return;
+    const strip = previous.shift() || h('div', { class: 'widget-strip' });
+    reconcileChildren(strip, widgets);
+    groups.push(strip);
+    widgets = [];
+  }
+  for (const tile of tiles) {
+    if (tile.className !== 'app-strip') widgets.push(tile);
+    else {
+      flushWidgets();
+      groups.push(tile);
+    }
+  }
+  flushWidgets();
+  return groups;
+}
 function renderZone(zone, names) {
   if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
@@ -318,7 +340,10 @@ function renderZone(zone, names) {
   for (const stale of el.children) {
     if (stale.className === 'app-strip' && !want.includes(stale)) appStripObserver.unobserve(stale);
   }
-  reconcileChildren(el, want);
+  const groups = groupZoneWidgets(el, want);
+  const appCount = groups.filter((group) => group.className === 'app-strip' && group.firstElementChild.childElementCount).length;
+  if (appCount) el.style.setProperty('--app-zone-min', `calc(${appCount} * var(--app-strip-min) + ${groups.length - 1} * var(--dock-gap))`);
+  reconcileChildren(el, groups);
   for (const strip of changedStrips) {
     updateAppOverflow(strip);
     (appStripObserver ||= new ResizeObserver((entries) => {

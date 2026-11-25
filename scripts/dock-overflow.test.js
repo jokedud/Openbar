@@ -15,7 +15,7 @@ if (process.versions.electron) {
 
   test('dock and custom tabs compact apps, expose hidden windows and restore labels when they fit', async () => {
     const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
-    const { wide, narrow, tab, restored, width, groups, actions, tightTab, fullCenter } = JSON.parse(stdout);
+    const { wide, narrow, tab, restored, width, groups, actions, tightTab, fullCenter, crowded } = JSON.parse(stdout);
     assert.equal(wide.more, false);
     assert.equal(wide.labels, true);
     assert.ok(wide.firstTile > narrow.firstTile);
@@ -38,6 +38,10 @@ if (process.versions.electron) {
     assert.equal(fullCenter.moreVisible, true, `Centered overflow button must fit in the full bar: ${JSON.stringify(fullCenter)}`);
     assert.equal(fullCenter.moreClickable, true, `Right widgets must not cover centered overflow: ${JSON.stringify(fullCenter)}`);
     assert.equal(fullCenter.rightFits, true);
+    for (const [mode, result] of Object.entries(crowded)) {
+      assert.equal(result.moreClickable && result.zonesFit, true, `${mode}: ${JSON.stringify(result)}`);
+      assert.equal(result.opened, true, `${mode}: More apps opens with hidden windows`);
+    }
   });
 }
 
@@ -51,6 +55,7 @@ async function measureDock() {
   }));
   const actions = [];
   let width, entries, onClose, onFocus;
+  let onOverflow;
   ipcMain.handle('init', () => ({
     settings: {
       layout: 'pill', groupWindows: true, showLabels: true, pinned: [], left: ['apps'], center: [], right: [],
@@ -63,6 +68,7 @@ async function measureDock() {
   ipcMain.handle('panel:toggle', (_event, widget, _anchor, items) => {
     assert.equal(widget, 'overflow');
     entries = items;
+    onOverflow?.(items);
   });
   ipcMain.handle('panel:overflow', () => entries);
   ipcMain.handle('panel:close', () => { actions.push('close'); onClose?.(); });
@@ -140,5 +146,43 @@ async function measureDock() {
       moreClickable: document.elementFromPoint(tile.x + tile.width / 2, tile.y + tile.height / 2) === more,
       rightFits: rightWidget.left >= tile.right && rightWidget.right <= bar.right };
   })()`);
-  return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth, groups, actions, tightTab, fullCenter };
+  const crowded = {};
+  for (const [mode, layout, zone] of [
+    ['centered full-width', 'full', 'center'],
+    ['default full-width', 'full', 'left'],
+    ['default pill', 'pill', 'right'],
+    ['selected pill tab', 'pill', 'left'],
+    ['selected full-width tab', 'full', 'left'],
+  ]) {
+    const widgets = ['search', 'desktop', 'clock', 'quick', 'start', 'system'];
+    const settings = { layout, left: widgets, center: widgets, right: widgets };
+    settings[zone] = [...widgets, 'apps', 'volume'];
+    if (mode.startsWith('selected')) {
+      settings.customTabs = [{
+        id: 'work', name: 'Work', items: settings.left.map((widget) => ({ id: widget, kind: 'widget', widget })),
+      }];
+    } else settings.customTabs = [];
+    let opened = false;
+    onOverflow = (items) => { opened = items.some(({ hwnds }) => hwnds.length); };
+    const result = await win.webContents.executeJavaScript(`(async () => {
+      Object.assign(OB.settings, ${JSON.stringify(settings)});
+      applyTheme();
+      render();
+      document.querySelector('[data-tab=work]')?.click();
+      render();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const bar = document.getElementById('bar').getBoundingClientRect();
+      const zones = [...document.querySelector('#bar').children].map(el => el.getBoundingClientRect());
+      const more = document.querySelector('.app-more');
+      const tile = more.getBoundingClientRect();
+      const hit = document.elementFromPoint(tile.x + tile.width / 2, tile.y + tile.height / 2);
+      const moreClickable = !more.hidden && tile.width > 0 && tile.left >= bar.left &&
+        tile.right <= bar.right && hit === more;
+      if (moreClickable) await showAppOverflow(more.previousElementSibling, hit);
+      return { moreClickable, zonesFit: zones.every((z) => z.left >= bar.left && z.right <= bar.right),
+        tileLeft: tile.left, tileRight: tile.right, barRight: bar.right };
+    })()`);
+    crowded[mode] = { ...result, opened };
+  }
+  return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth, groups, actions, tightTab, fullCenter, crowded };
 }

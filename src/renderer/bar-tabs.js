@@ -6,11 +6,10 @@ const shortcutIcons = { app: 'desktop', folder: 'folder', website: 'link' };
 const dockLeft = document.getElementById('left');
 
 document.addEventListener('wheel', (e) => {
-  const strip = e.target.closest('#dock-tabs, #left, #right');
-  if (!strip || e.ctrlKey || e.deltaX || !e.deltaY || strip.scrollWidth <= strip.clientWidth) return;
-  const pill = OB.settings.layout === 'pill';
-  if ((strip.id === 'left' && !dockTabId && pill) ||
-      (strip.id === 'right' && (!dockTabId || !pill))) return;
+  if (e.ctrlKey || e.deltaX || !e.deltaY) return;
+  let strip = e.target.closest('.widget-strip, .zone, #dock-tabs');
+  if (strip?.classList.contains('widget-strip') && strip.scrollWidth <= strip.clientWidth) strip = strip.closest('.zone');
+  if (!strip || strip.scrollWidth <= strip.clientWidth) return;
   e.preventDefault();
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? strip.clientWidth : 1;
   strip.scrollLeft += e.deltaY * unit;
@@ -21,7 +20,7 @@ function dockTabItems(homeItems) {
   const bar = document.getElementById('bar');
   if (bar.dataset.customTab !== active?.id) {
     if (active) bar.dataset.customTab = active.id; else delete bar.dataset.customTab;
-    dockLeft.scrollLeft = 0;
+    resetDockLeftScroll();
   }
   return active ? active.items : homeItems;
 }
@@ -32,7 +31,7 @@ function renderDockTabs(tabs) {
   if (!tabs.length) {
     if (dockTabs.isConnected) {
       dockTabs.remove();
-      dockLeft.scrollLeft = 0;
+      resetDockLeftScroll();
     }
     return null;
   }
@@ -58,6 +57,11 @@ function renderDockTabs(tabs) {
   }
   while (dockTabs.childElementCount > buttons.length) dockTabs.lastElementChild.remove();
   return active;
+}
+
+function resetDockLeftScroll() {
+  dockLeft.scrollLeft = 0;
+  for (const strip of dockLeft.querySelectorAll('.widget-strip')) strip.scrollLeft = 0;
 }
 
 function dockShortcut(item) {

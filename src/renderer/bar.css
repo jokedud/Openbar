@@ -1,20 +1,22 @@
 html, body { background: transparent; overflow: hidden; height: 100%; user-select: none; }
 body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc(var(--tile-h) * .275); }
-#bar { position: relative; height: var(--bar-h); display: flex; align-items: center; gap: 3px; padding: 3px; background: var(--bg);
+#bar { --dock-gap: 3px; --app-strip-min: calc(var(--tile-h) + var(--dock-gap));
+  position: relative; height: var(--bar-h); display: flex; align-items: center; gap: var(--dock-gap); padding: 3px; background: var(--bg);
   border-radius: var(--bar-r); overflow: hidden; animation: rise .5s cubic-bezier(.32,.72,0,1) both;
   box-shadow: inset 0 0 0 1px var(--bar-rim), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -10px 24px rgba(0,0,0,.28), inset 0 10px 24px rgba(255,255,255,.04), var(--surface-shadow); }
 @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 [data-glass="off"] #bar { box-shadow: inset 0 0 0 1px var(--bar-rim), var(--surface-shadow); }
 [data-layout="pill"] body { display: flex; justify-content: center; }
-[data-layout="pill"] #bar { display: inline-flex; width: auto; max-width: 100%; overflow: hidden; }
-.zone { display: flex; align-items: center; gap: 3px; min-width: 0; height: 100%; }
-#left { flex: 1 1 0; justify-content: flex-start; overflow: hidden; }
-#center { flex: 0 0 auto; justify-content: center; }
-[data-layout="full"] #center:has(.app-strip) { flex-shrink: 1; }
-[data-layout="full"] #bar:has(#center .app-strip) > :is(#left, #right) { flex: 1 0 auto; }
-#right { flex: 1 1 0; justify-content: flex-end; }
-[data-layout="pill"] #left, [data-layout="pill"] #center, [data-layout="pill"] #right { flex: 0 0 auto; min-width: max-content; }
-[data-layout="pill"] :is(#left, #center, #right):has(.app-strip) { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+[data-layout="pill"] #bar { flex: 0 1 auto; width: max-content; max-width: 100%; }
+.zone, .widget-strip { display: flex; align-items: center; gap: var(--dock-gap); height: 100%; overflow-x: auto; scrollbar-width: none; }
+.zone, .widget-strip { flex: 0 1 auto; min-width: 0; }
+.zone:not(:empty) { min-width: min(var(--tile-h), 20%); }
+.zone:has(.app-strip .app) { min-width: var(--app-zone-min); }
+#center { justify-content: safe center; }
+#right { justify-content: safe flex-end; }
+[data-layout="full"] :is(#left, #right) { flex: 1 1 0; }
+[data-layout="full"] #bar:has(#center .app-strip .app) > :is(#left, #right) { flex-basis: auto; }
+[data-layout="pill"] .zone:has(.app-strip .app), [data-layout="full"] #center:has(.app-strip .app) { flex-shrink: 100; }
 
 /* Every widget and app sits on its own glass tile. */
 .w, .app, .w-group { display: flex; align-items: center; height: var(--tile-h); border-radius: var(--tile-r); background: var(--tile);
@@ -33,9 +35,9 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 .stack.meters > * { font-weight: 600; font-size: 9.5px; color: var(--muted); letter-spacing: .02em; }
 .network-rates { font-size: 10px; font-weight: 600; width: 14ch; }
 .network-rates > .val { font-size: inherit; }
-.app-strip, .apps { display: flex; align-items: center; gap: 3px; height: 100%; }
-.app-strip { flex: 0 1 auto; min-width: 0; }
-.app-strip:has(.app) { min-width: var(--tile-h); }
+.app-strip, .apps { display: flex; align-items: center; gap: var(--dock-gap); height: 100%; }
+.app-strip { flex: 0 100 auto; min-width: 0; }
+.app-strip:has(.app) { min-width: var(--app-strip-min); }
 .apps { position: relative; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .app-more[hidden] { display: none; }
 .app-more { font-size: 18px; }
