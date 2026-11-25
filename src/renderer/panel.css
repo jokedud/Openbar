@@ -43,4 +43,6 @@ textarea.notes { width: 100%; height: 100%; min-height: 300px; resize: none; bac
 .empty { text-align: center; color: var(--muted); padding: 24px 8px; line-height: 1.5; }
 #body::-webkit-scrollbar { width: 10px; } #body::-webkit-scrollbar-thumb { background: transparent; border: 3px solid transparent; background-clip: padding-box; border-radius: 5px; }
 #body:hover::-webkit-scrollbar-thumb { background-color: var(--active); }
-.hours::-webkit-scrollbar { height: 0; }
+.hours::-webkit-scrollbar { height: 6px; }
+.hours::-webkit-scrollbar-thumb { background: var(--hover); border-radius: 3px; }
+.hours:hover::-webkit-scrollbar-thumb { background: var(--active); }
