@@ -152,20 +152,27 @@ function cmdWidget(id) {
 let openPanel = null;
 const cache = new Map();
 function renderZone(zone, names) {
+  if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
   const want = [];
-  for (const name of names) {
-    const fn = name.startsWith('cmd:') ? () => cmdWidget(name.slice(4)) : W[name];
+  const nodes = cache.get(zone) || new Map();
+  const next = new Map();
+  for (const [i, item] of names.entries()) {
+    const name = typeof item === 'string' ? item : item.widget;
+    const fn = name?.startsWith('cmd:') ? () => cmdWidget(name.slice(4))
+      : Object.hasOwn(W, name) ? W[name] : name ? null : () => dockShortcut(item);
     if (!fn) continue;
     let node = null;
     try { node = fn(); } catch (e) { console.error(name, e); }
     if (!node) continue;
-    node.dataset.w = name;
-    const key = zone + ':' + name;
-    const prev = cache.get(key);
-    if (prev && prev.outerHTML === node.outerHTML) want.push(prev);
-    else { cache.set(key, node); want.push(node); }
+    if (name) node.dataset.w = name;
+    const key = typeof item === 'string' ? `${name}:${i}` : item.id;
+    const prev = nodes.get(key);
+    if (prev && prev.outerHTML === node.outerHTML) node = prev;
+    next.set(key, node);
+    want.push(node);
   }
+  cache.set(zone, next);
   const cur = [...el.children];
   if (cur.length !== want.length || cur.some((c, i) => c !== want[i])) el.replaceChildren(...want);
 }
@@ -232,6 +239,7 @@ function cycle(wins) {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button');
   if (!t) return;
+  if (t.dataset.tabItem) return api.invoke('tabs:open', document.getElementById('bar').dataset.customTab, t.dataset.tabItem);
   if (t.dataset.panel) return api.invoke('panel:toggle', t.dataset.panel, centerX(t));
   if (t.dataset.media) return api.invoke('media', t.dataset.media);
   if (t.dataset.sys) return api.invoke('system', t.dataset.sys);
@@ -270,14 +278,15 @@ document.addEventListener('contextmenu', async (e) => {
     return;
   }
   const id = await api.invoke('menu', [
-    { id: 'settings', label: 'OpenBar settings…' }, { id: 'apps', label: 'Pin apps…' }, { id: 'widgets', label: 'Arrange widgets…' }, { type: 'separator' },
+    { id: 'settings', label: 'OpenBar settings…' }, { id: 'apps', label: 'Pin apps…' }, { id: 'widgets', label: 'Arrange widgets…' },
+    { id: 'custom-tabs', label: 'Edit custom tabs…' }, { type: 'separator' },
     { id: 'pos', label: OB.settings.position === 'top' ? 'Move to bottom' : 'Move to top' },
     { id: 'layout', label: OB.settings.layout === 'pill' ? 'Full-width layout' : 'Floating pill layout' },
     { id: 'labels', label: 'Show app labels', checked: !!OB.settings.showLabels },
     { type: 'separator' }, { id: 'taskmgr', label: 'Task Manager' }, { id: 'quit', label: 'Quit OpenBar' },
   ]);
   if (id === 'settings') api.invoke('settings:open');
-  else if (id === 'apps' || id === 'widgets') api.invoke('settings:open', id);
+  else if (id === 'apps' || id === 'widgets' || id === 'custom-tabs') api.invoke('settings:open', id);
   else if (id === 'pos') OB.setSettings({ position: OB.settings.position === 'top' ? 'bottom' : 'top' });
   else if (id === 'layout') OB.setSettings({ layout: OB.settings.layout === 'pill' ? 'full' : 'pill' });
   else if (id === 'labels') OB.setSettings({ showLabels: !OB.settings.showLabels });
