@@ -1,7 +1,40 @@
 'use strict';
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
+const { runInNewContext } = require('node:vm');
 const { normalizeCustomTabs, shortcutTarget } = require('../src/main/custom-tabs');
+
+test('scrolls crowded Home apps with the mouse wheel only when the tab switcher is present', () => {
+  let onWheel;
+  let prevented = 0;
+  const tabSwitcher = { isConnected: true };
+  const left = {
+    scrollLeft: 0, scrollWidth: 600, clientWidth: 400,
+    addEventListener(type, handler, options) {
+      assert.equal(type, 'wheel');
+      assert.equal(options.passive, false);
+      onWheel = handler;
+    },
+  };
+  runInNewContext(readFileSync(path.join(__dirname, '../src/renderer/bar-tabs.js'), 'utf8'), {
+    h: () => tabSwitcher,
+    document: { getElementById: () => left },
+    OB: { settings: { layout: 'full' } },
+  });
+  const wheel = { deltaX: 0, deltaY: 80, deltaMode: 0, preventDefault: () => prevented++ };
+  onWheel(wheel);
+  assert.equal(left.scrollLeft, 80);
+  onWheel({ ...wheel, deltaX: 25 });
+  left.clientWidth = 600;
+  onWheel(wheel);
+  left.clientWidth = 400;
+  tabSwitcher.isConnected = false;
+  onWheel(wheel);
+  assert.equal(left.scrollLeft, 80);
+  assert.equal(prevented, 1);
+});
 
 test('normalizes persisted tabs without altering tab or item order', () => {
   const tabs = [

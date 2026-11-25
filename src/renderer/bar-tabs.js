@@ -3,6 +3,15 @@
 let dockTabId = null;
 const dockTabs = h('nav', { id: 'dock-tabs', 'aria-label': 'Dock tabs' });
 const shortcutIcons = { app: 'desktop', folder: 'folder', website: 'link' };
+const dockLeft = document.getElementById('left');
+
+dockLeft.addEventListener('wheel', (e) => {
+  if (!dockTabs.isConnected || (!dockTabId && OB.settings.layout === 'pill') || e.ctrlKey || e.deltaX ||
+      !e.deltaY || dockLeft.scrollWidth <= dockLeft.clientWidth) return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? dockLeft.clientWidth : 1;
+  dockLeft.scrollLeft += e.deltaY * unit;
+}, { passive: false });
 
 function dockTabItems(homeItems) {
   const active = renderDockTabs(OB.settings.customTabs);
@@ -10,7 +19,7 @@ function dockTabItems(homeItems) {
   if (active && OB.settings.layout === 'pill') bar.style.setProperty('--dock-screen-width', screen.width + 'px');
   if (bar.dataset.customTab !== active?.id) {
     if (active) bar.dataset.customTab = active.id; else delete bar.dataset.customTab;
-    document.getElementById('left').scrollLeft = 0;
+    dockLeft.scrollLeft = 0;
   }
   return active ? active.items : homeItems;
 }
@@ -19,11 +28,13 @@ function renderDockTabs(tabs) {
   const active = tabs.find((t) => t.id === dockTabId);
   dockTabId = active?.id || null;
   if (!tabs.length) {
-    dockTabs.remove();
+    if (dockTabs.isConnected) {
+      dockTabs.remove();
+      dockLeft.scrollLeft = 0;
+    }
     return null;
   }
-  const left = document.getElementById('left');
-  if (!dockTabs.isConnected) left.before(dockTabs);
+  if (!dockTabs.isConnected) dockLeft.before(dockTabs);
   const buttons = [{ id: null, name: 'Home' }, ...tabs];
   for (const [index, tab] of buttons.entries()) {
     let button = dockTabs.children[index];
