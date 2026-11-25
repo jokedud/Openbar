@@ -61,7 +61,7 @@ T.general = (m) => {
   m.append(h('h2', {}, 'Layout'));
   m.append(field('Position', null, seg([['bottom', 'Bottom'], ['top', 'Top']], S().position, (v) => save({ position: v }).then(draw))));
   m.append(field('Layout', 'Full width spans the screen; pill floats in the centre and fits its content.', seg([['full', 'Full width'], ['pill', 'Pill']], S().layout, (v) => save({ layout: v }).then(draw))));
-  m.append(field('Bar height', '32–72 px', num(S().height, 32, 72, 46, (v) => save({ height: v }))));
+  m.append(field('Bar height', '32–72 px', num(S().height, 32, 72, 54, (v) => save({ height: v }))));
   m.append(field('Gap around the bar', '0–20 px', num(S().margin, 0, 20, 6, (v) => save({ margin: v }))));
   m.append(field('Reserve screen space', 'Maximised windows stop at the bar instead of going under it.', toggle(() => S().reserveSpace, (v) => save({ reserveSpace: v }))));
   m.append(h('h2', {}, 'Behaviour'));

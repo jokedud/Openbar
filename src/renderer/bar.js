@@ -316,6 +316,7 @@ document.addEventListener('dragend', (e) => {
 });
 
 OB.init().then(() => {
+  observeSurface(document.getElementById('bar'));
   OB.on(scheduleRender);
   api.on('panel', (name) => { openPanel = name; scheduleRender(); });
   setInterval(scheduleRender, 1000);
