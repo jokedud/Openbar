@@ -80,10 +80,16 @@ app.whenReady().then(async () => {
     };
   })()\`);
 
-  // Switch panel to network and verify panel:ready arrives only after DOM switches.
+  // Switch panel to network off-screen (matching main.js) and verify panel:ready arrives after paint.
   const boundsBeforeSwitch = boundsEvents.length;
+  const readyPromise = new Promise((resolve) => {
+    const timer = setTimeout(resolve, 3000);
+    ipcMain.once('panel:ready', () => { clearTimeout(timer); resolve(); });
+  });
+  win.setPosition(-2000, 0);
+  win.showInactive();
   win.webContents.send('panel:widget', 'network', 7);
-  await new Promise((r) => setTimeout(r, 120));
+  await readyPromise;
   const afterSwitch = await win.webContents.executeJavaScript(\`(() => ({
     widgetAttr: document.getElementById('panel').dataset.widget,
     title: document.getElementById('title').textContent,

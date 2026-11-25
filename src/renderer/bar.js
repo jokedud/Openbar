@@ -123,9 +123,11 @@ W.battery = () => {
 W.media = () => {
   const m = OB.state.media;
   if (!m || !m.title) return null;
+  const track = panelBtn('media', '', m.art ? h('img', { class: 'art', src: m.art, alt: '' }) : icon('music', 16),
+    h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '150px' } }, m.title), h('span', { class: 'sub ellipsis', style: { maxWidth: '150px' } }, m.artist || '')));
+  track.title = `Now playing: ${m.title}`;
   return h('div', { class: 'w-group' },
-    panelBtn('media', '', m.art ? h('img', { class: 'art', src: m.art }) : icon('music', 16),
-      h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '150px' } }, m.title), h('span', { class: 'sub ellipsis', style: { maxWidth: '150px' } }, m.artist || ''))),
+    track,
     h('button', { class: 'w', 'data-media': 'playpause', title: m.playing ? 'Pause' : 'Play' }, icon(m.playing ? 'pause' : 'play', 14)),
     h('button', { class: 'w', 'data-media': 'next', title: 'Next' }, icon('next', 14)));
 };
@@ -177,6 +179,43 @@ function cmdWidget(id) {
 // ---------------- render ----------------
 let openPanel = null;
 const cache = new Map();
+const appStrips = new WeakMap();
+
+function updateAppOverflow(strip) {
+  const [apps, more] = strip.children;
+  updateFolder(more, apps, strip, 'overflow', (tile) => {
+    const img = tile.querySelector('img');
+    return img ? h('img', { src: img.src, alt: '' }) : icon('desktop', 12);
+  });
+}
+
+function appStrip(apps) {
+  const more = folderButton('More apps', (e) => showAppOverflow(apps, e.currentTarget));
+  more.classList.add('app-more');
+  const strip = h('div', { class: 'app-strip' }, apps, more);
+  apps.addEventListener('scroll', () => updateAppOverflow(strip));
+  strip.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.deltaX || !e.deltaY || apps.scrollWidth <= apps.clientWidth) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? apps.clientWidth : 1;
+    apps.scrollLeft += e.deltaY * unit;
+  }, { passive: false });
+  return strip;
+}
+
+function showAppOverflow(apps, button) {
+  const pins = OB.settings.pinned;
+  const items = [];
+  for (const tile of clippedTiles(apps)) {
+    if (!tile.matches('.app')) continue;
+    const pin = pins[+tile.dataset.pin];
+    const hwnds = pin ? runningFor(pin).map((w) => w.hwnd) : tile.dataset.hwnds.split(',').map(Number);
+    items.push({ label: tile.getAttribute('aria-label'), icon: tile.querySelector('img')?.src, pin, hwnds });
+  }
+  if (items.length) return api.invoke('panel:toggle', 'overflow', centerX(button), items);
+}
+
 function childKey(node) {
   if (!node || node.nodeType !== 1 || !node.dataset) return null;
   if (node.dataset.pin != null) return `pin:${node.dataset.pin}`;
@@ -253,6 +292,31 @@ function reconcileChildren(el, want) {
     if (el.children[i] !== want[i]) el.insertBefore(want[i], el.children[i] || null);
   }
 }
+function groupZoneWidgets(el, tiles) {
+  if (!tiles.some((tile) => tile.className === 'app-strip')) return tiles;
+  const previous = [...el.children].filter((child) => child.className === 'widget-strip');
+  const groups = [];
+  let widgets = [];
+  function flushWidgets() {
+    if (!widgets.length) return;
+    const strip = previous.shift() || h('div', { class: 'widget-strip' });
+    reconcileChildren(strip, widgets);
+    groups.push(strip);
+    widgets = [];
+  }
+  for (const tile of tiles) {
+    if (tile.className !== 'app-strip') widgets.push(tile);
+    else {
+      flushWidgets();
+      groups.push(tile);
+    }
+  }
+  flushWidgets();
+  return groups;
+}
+function separatorCount(group) {
+  return [...group.children].every((child) => child.className === 'sep') ? group.childElementCount : 0;
+}
 function renderZone(zone, names) {
   if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
@@ -272,37 +336,100 @@ function renderZone(zone, names) {
     const prev = nodes.get(key);
     if (prev) node = patchNode(prev, node);
     next.set(key, node);
-    want.push(node);
+    if (node.className === 'apps') {
+      if (!node.childElementCount) continue;
+      if (!appStrips.has(node)) appStrips.set(node, appStrip(node));
+      want.push(appStrips.get(node));
+    } else want.push(node);
   }
   cache.set(zone, next);
-  reconcileChildren(el, want);
+  const groups = groupZoneWidgets(el, want);
+  const appCount = groups.filter((group) => group.className === 'app-strip').length;
+  if (appCount) {
+    const separators = groups.map(separatorCount).filter(Boolean);
+    const count = separators.reduce((sum, n) => sum + n, 0);
+    el.style.setProperty('--app-zone-min', `calc(${appCount} * var(--app-strip-min) +
+      ${groups.length - appCount - separators.length} * var(--widget-strip-min, 0px) +
+      ${count} * var(--separator-width) + ${groups.length - 1 + count - separators.length} * var(--dock-gap))`);
+  }
+  reconcileChildren(el, groups);
 }
-function pillWidth(bar) {
+function naturalDockWidth(bar, pill) {
+  bar.dataset.measuringDock = '';
   const cs = getComputedStyle(bar);
   const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
   const gap = parseFloat(cs.columnGap || cs.gap) || 0;
   let w = pad + Math.max(0, bar.children.length - 1) * gap;
   for (const z of bar.children) {
     if (!z.childElementCount) continue;
+    if (z.id === 'dock-tabs') {
+      w += pill ? Math.min(z.firstElementChild.scrollWidth, parseFloat(getComputedStyle(z).maxWidth)) : z.clientWidth;
+      continue;
+    }
     const zcs = getComputedStyle(z);
     const zgap = parseFloat(zcs.columnGap || zcs.gap) || 0;
     w += Math.max(0, z.childElementCount - 1) * zgap;
-    for (const k of z.children) w += k.scrollWidth;
+    for (const k of z.children) w += k.className === 'app-strip' ? k.firstElementChild.scrollWidth : k.scrollWidth;
   }
-  return Math.ceil(w + 2);
+  delete bar.dataset.measuringDock;
+  return Math.ceil(w);
+}
+function reserveWidgetSpace(bar, available) {
+  let folders = 0, widgetStrips = 0, widgetZones = 0, separators = 0;
+  let gaps = bar.childElementCount + 1;
+  function reserveSeparators(group) {
+    const count = separatorCount(group);
+    if (!count) return false;
+    separators += count;
+    gaps += count - 1;
+    return true;
+  }
+  for (const zone of bar.children) {
+    if (zone.id === 'dock-tabs') { folders++; continue; }
+    const apps = zone.querySelectorAll('.app-strip').length;
+    if (apps) {
+      folders += apps;
+      gaps += zone.childElementCount - 1;
+      for (const strip of zone.children) {
+        if (strip.className === 'widget-strip' && !reserveSeparators(strip)) widgetStrips++;
+      }
+    } else if (zone.childElementCount && !reserveSeparators(zone)) widgetZones++;
+  }
+  const tracks = widgetStrips + widgetZones;
+  if (!tracks) return;
+
+  const budget = `calc(${available}px - ${folders} * var(--app-strip-min) -
+    ${separators} * var(--separator-width) - ${gaps} * var(--dock-gap))`;
+  const share = `clamp(0px, calc(${budget} / ${tracks}), var(--tile-h))`;
+  const mixed = widgetStrips ? `clamp(${share}, calc((${budget} - ${widgetZones / 2} * ${share}) / ${widgetStrips}), var(--tile-h))` : '0px';
+  bar.style.setProperty('--widget-strip-min', mixed);
+  if (widgetZones) bar.style.setProperty('--widget-zone-min',
+    `clamp(0px, calc((${budget} - ${widgetStrips} * var(--widget-strip-min)) / ${widgetZones}), var(--tile-h))`);
 }
 let lastSentWidth = 0;
+function fitDock() {
+  const bar = document.getElementById('bar');
+  const pill = OB.settings.layout === 'pill';
+  const body = getComputedStyle(document.body);
+  const available = document.body.clientWidth - parseFloat(body.paddingLeft) - parseFloat(body.paddingRight);
+  reserveWidgetSpace(bar, available);
+  const natural = naturalDockWidth(bar, pill);
+  bar.toggleAttribute('data-compact-widgets', natural > available);
+  updateTabFolder();
+  for (const strip of bar.querySelectorAll('.app-strip')) updateAppOverflow(strip);
+  if (pill && natural + 2 !== lastSentWidth) {
+    lastSentWidth = natural + 2;
+    api.invoke('bar:width', lastSentWidth);
+  } else if (!pill) lastSentWidth = 0;
+}
+let fitFrame = 0;
+function scheduleDockFit() { if (!fitFrame) fitFrame = requestAnimationFrame(() => { fitFrame = 0; fitDock(); }); }
+
 function render() {
   if (dragFrom != null) return;
   const s = OB.settings;
   renderZone('left', s.left); renderZone('center', s.center); renderZone('right', s.right);
-  const bar = document.getElementById('bar');
-  if (s.layout === 'pill') {
-    const w = pillWidth(bar);
-    if (w !== lastSentWidth) { lastSentWidth = w; api.invoke('bar:width', w); }
-  } else {
-    lastSentWidth = 0;
-  }
+  scheduleDockFit();
 }
 let raf = 0;
 function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
@@ -463,9 +590,15 @@ document.addEventListener('dragend', (e) => {
 OB.init().then(() => {
   const barEl = document.getElementById('bar');
   observeSurface(barEl);
+  const dockObserver = new ResizeObserver(scheduleDockFit);
+  for (const zone of [document.body, dockTabs, ...barEl.children]) dockObserver.observe(zone);
   barEl?.addEventListener?.('mouseleave', () => clearDockPreview(false));
   OB.on(scheduleRender);
-  api.on('panel', (name) => { openPanel = name; scheduleRender(); });
+  api.on('bar:select-tab', (id) => { dockTabId = id || null; scheduleRender(); });
+  api.on('panel', (name) => {
+    openPanel = name;
+    scheduleRender();
+  });
   setInterval(scheduleRender, 1000);
   render();
 });
