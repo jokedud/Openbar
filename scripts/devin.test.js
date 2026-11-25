@@ -2,11 +2,12 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const { createRequire } = require('node:module');
 const vm = require('node:vm');
-const { listSessions, sessionUrl } = require('../src/main/devin');
+const { listSessions, listLocalSessions, sessionUrl } = require('../src/main/devin');
 
 const account = { token: 'cog_test', orgId: 'org-example' };
 const success = (payload) => ({ ok: true, json: async () => payload });
@@ -68,6 +69,102 @@ test('handles missing setup, API errors, malformed data and no sessions', async 
 test('session links stay on the Devin sessions route', () => {
   assert.equal(sessionUrl('devin-123_abc'), 'https://app.devin.ai/sessions/devin-123_abc');
   for (const id of ['', '../settings', 'run?next=elsewhere', 'https://example.com', null]) assert.equal(sessionUrl(id), null);
+});
+
+test('reads visible Devin Local session metadata from a live SQLite history', (t) => {
+  const sqlite = process.getBuiltinModule?.('node:sqlite');
+  if (!sqlite) return t.skip('Node does not provide node:sqlite');
+  const APPDATA = fs.mkdtempSync(path.join(os.tmpdir(), 'openbar-devin-'));
+  t.after(() => fs.rmSync(APPDATA, { recursive: true, force: true }));
+  assert.deepEqual(listLocalSessions({ APPDATA }), []);
+  const directory = path.join(APPDATA, 'devin', 'cli');
+  fs.mkdirSync(directory, { recursive: true });
+  const db = new sqlite.DatabaseSync(path.join(directory, 'sessions.db'));
+  try {
+    db.exec(`PRAGMA journal_mode = WAL;
+      CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT, last_activity_at INTEGER, hidden INTEGER NOT NULL);
+      INSERT INTO sessions VALUES
+        ('local-new', '  Local project  ', 1795000000000, 0),
+        ('local-old', NULL, 1794000000, 0),
+        ('internal-helper', 'Hidden', 1796000000000, 1);`);
+    assert.deepEqual(listLocalSessions({ APPDATA }), [
+      { id: 'local-new', title: 'Local project', local: true, updatedAt: 1795000000000 },
+      { id: 'local-old', title: 'Untitled session', local: true, updatedAt: 1794000000000 },
+    ]);
+    assert.deepEqual(listLocalSessions({ DEVIN_SESSIONS_DIR: path.join(APPDATA, 'devin') }), listLocalSessions({ APPDATA }));
+    db.exec('DROP TABLE sessions');
+    assert.deepEqual(listLocalSessions({ APPDATA }), []);
+  } finally {
+    db.close();
+  }
+});
+
+function devinPanel(invoke) {
+  const h = (tag, attrs, ...children) => ({
+    tag, attrs, children, textContent: '', hidden: !!attrs?.hidden,
+    append(...items) { this.children.push(...items); },
+    replaceChildren(...items) { this.children = items; },
+  });
+  const body = h('div');
+  const context = vm.createContext({
+    URLSearchParams, location: { search: '?widget=devin' },
+    document: { getElementById: () => h('div') }, body, h, icon() {},
+    api: { invoke }, OB: { init: () => new Promise(() => {}) },
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'panel.js'), 'utf8'), context);
+  vm.runInContext('P.devin(body)', context);
+  const [, list, message, more] = body.children[0].children;
+  return { list, message, more };
+}
+
+test('shows local rows while the cloud request is pending and without a cloud key', async () => {
+  let finishCloud;
+  const { list, message } = devinPanel(async (channel) => {
+    if (channel === 'devin:list-local') return [{ id: 'local', title: 'Local project', local: true, updatedAt: 1 }];
+    assert.equal(channel, 'devin:list');
+    return new Promise((resolve) => { finishCloud = resolve; });
+  });
+  await new Promise(setImmediate);
+  assert.equal(list.children.length, 1);
+  assert.equal(list.children[0].tag, 'div');
+  assert.equal(list.children[0].children[1].children[0], 'Local');
+  finishCloud({ error: 'missing' });
+  await new Promise(setImmediate);
+  assert.equal(list.children[0].children[0].children[0].children[0], 'Local project');
+  assert.match(message.children[0].children[0], /API key/);
+});
+
+test('merges cloud pages with local sessions by update time and prefers the cloud row for duplicate IDs', async () => {
+  const opened = [];
+  let localReads = 0;
+  const cloud = (id, title, updatedAt) => ({ id, title, updatedAt, status: 'running' });
+  const { list, more } = devinPanel(async (channel, arg) => {
+    if (channel === 'devin:list-local') {
+      localReads++;
+      return [
+        { id: 'shared', title: 'Local copy', local: true, updatedAt: 30 },
+        { id: 'local', title: 'Local project', local: true, updatedAt: 10 },
+      ];
+    }
+    if (channel === 'devin:list') {
+      return arg == null
+        ? { sessions: [cloud('cloud', 'Cloud project', 20)], next: 'more' }
+        : { sessions: [cloud('shared', 'Cloud copy', 15)], next: null };
+    }
+    assert.equal(channel, 'devin:open');
+    opened.push(arg);
+    return true;
+  });
+  const titles = () => list.children.map((row) => row.children[0].children[0].children[0]);
+  await new Promise(setImmediate);
+  assert.deepEqual(titles(), ['Local copy', 'Cloud project', 'Local project']);
+  assert.equal(more.hidden, false);
+  await more.onclick();
+  assert.deepEqual(titles(), ['Cloud project', 'Cloud copy', 'Local project']);
+  assert.equal(more.hidden, true);
+  assert.equal(localReads, 1);
+  await list.children[1].attrs.onclick();
+  assert.deepEqual(opened, ['shared']);
 });
 
 test('the Devin bubble stays six pixels from the visible dock at either edge', () => {

@@ -173,13 +173,20 @@ function restoreTaskbar() {
 
 // ---------------- running windows + screen time ----------------
 const iconCache = new Map();
+function windowsSettingsIcon() {
+  if (!isWin) return null;
+  const images = path.join(process.env.SystemRoot || 'C:/Windows', 'ImmersiveControlPanel', 'images');
+  const unplated = nativeImage.createFromPath(path.join(images, 'logo.targetsize-256_altform-unplated.png'));
+  return unplated.isEmpty() ? nativeImage.createFromPath(path.join(images, 'logo.png')) : unplated;
+}
+
 async function exeIcon(file) {
   if (!file) return '';
   if (iconCache.has(file)) return iconCache.get(file);
   iconCache.set(file, '');
   try {
-    const img = await app.getFileIcon(file, { size: 'normal' });
-    iconCache.set(file, img.toDataURL());
+    const img = /^ms-settings:$/i.test(file) ? windowsSettingsIcon() : await app.getFileIcon(file, { size: 'normal' });
+    if (img && !img.isEmpty()) iconCache.set(file, img.toDataURL());
   } catch (_) { /* no icon */ }
   return iconCache.get(file);
 }
@@ -568,6 +575,7 @@ function registerDevinIpc() {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
     return saveDevinConfig({});
   });
+  ipcMain.handle('devin:list-local', () => devin.listLocalSessions());
   ipcMain.handle('devin:list', (_e, cursor) => {
     const { encrypted, orgId } = devinStore.get();
     if (!encrypted) return { error: 'missing' };

@@ -29,13 +29,18 @@ body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc
 .stack { display: flex; flex-direction: column; gap: 3px; line-height: 1; text-align: left; }
 .stack > :first-child { font-weight: 600; font-size: 12.5px; }
 .stack.meters > * { font-weight: 600; font-size: 9.5px; color: var(--muted); letter-spacing: .02em; }
+.network-rates { font-size: 10px; font-weight: 600; width: 14ch; }
+.network-rates > .val { font-size: inherit; }
 .apps { display: flex; align-items: center; gap: 3px; height: 100%; overflow: hidden; }
 .app { --app-icon-size: min(calc(var(--tile-h) * .62), calc(var(--tile-h) - 11px));
   position: relative; justify-content: center; gap: 8px; min-width: var(--tile-h); padding: 0 calc(var(--tile-h) * .125); max-width: 220px;
   border-radius: calc(var(--tile-h) * .36); corner-shape: squircle; border: 1px solid var(--tile-line); box-shadow: none;
   background-image: linear-gradient(180deg, color-mix(in srgb, var(--tile-line) 45%, transparent), transparent); }
 .app img, .app .ph { width: var(--app-icon-size); height: var(--app-icon-size); flex: none; border-radius: 22%; object-fit: contain; }
-.app .ph { display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 12px; }
+.app .ph { display: flex; align-items: center; justify-content: center; color: var(--fg); font-weight: 600; font-size: 12px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--fg) 23%, transparent), var(--tile));
+  box-shadow: inset 0 0 0 1px var(--tile-line), inset 0 1px 0 var(--bar-rim), 0 1px 3px rgba(0,0,0,.2);
+  backdrop-filter: blur(6px); }
 .app .label { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
 .app .dot { position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%); height: 3px; width: 3px; border-radius: 2px; background: var(--accent); opacity: .9; }
 .app.active .dot { width: 10px; }

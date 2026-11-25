@@ -1,11 +1,39 @@
 'use strict';
 
+const path = require('path');
+
 const PAGE_SIZE = 30;
 const ORG_ID = /^org-[a-z0-9_-]+$/i;
 const SESSION_ID = /^[a-z0-9_-]+$/i;
 
 function sessionUrl(id) {
   return typeof id === 'string' && SESSION_ID.test(id) ? `https://app.devin.ai/sessions/${id}` : null;
+}
+
+function sessionTitle(title) {
+  return typeof title === 'string' && title.trim() ? title.trim() : 'Untitled session';
+}
+
+function listLocalSessions({ APPDATA, DEVIN_SESSIONS_DIR } = process.env) {
+  const root = DEVIN_SESSIONS_DIR || (APPDATA && path.join(APPDATA, 'devin'));
+  if (!root) return [];
+  let db;
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    db = new DatabaseSync(path.join(root, 'cli', 'sessions.db'), { readOnly: true });
+    const rows = db.prepare('SELECT id, title, last_activity_at FROM sessions WHERE hidden = 0 ORDER BY last_activity_at DESC').all();
+    return rows.filter((row) => typeof row.id === 'string' && SESSION_ID.test(row.id)).map((row) => ({
+      id: row.id,
+      title: sessionTitle(row.title),
+      local: true,
+      updatedAt: Number.isFinite(row.last_activity_at)
+        ? (row.last_activity_at < 1e12 ? row.last_activity_at * 1000 : row.last_activity_at) : null,
+    }));
+  } catch {
+    return [];
+  } finally {
+    db?.close();
+  }
 }
 
 function parsePage(payload, legacy, offset) {
@@ -16,7 +44,7 @@ function parsePage(payload, legacy, offset) {
     const ms = typeof date === 'number' ? date * 1000 : Date.parse(date);
     return {
       id: s.session_id,
-      title: typeof s.title === 'string' && s.title.trim() ? s.title.trim() : 'Untitled session',
+      title: sessionTitle(s.title),
       status: (typeof (s.status_enum || s.status) === 'string' ? s.status_enum || s.status : 'Unknown').replace(/_/g, ' '),
       updatedAt: Number.isFinite(ms) ? ms : null,
     };
@@ -60,4 +88,4 @@ async function listSessions({ token, orgId }, cursor, fetcher = globalThis.fetch
   }
 }
 
-module.exports = { listSessions, sessionUrl, ORG_ID };
+module.exports = { listSessions, listLocalSessions, sessionUrl, ORG_ID };

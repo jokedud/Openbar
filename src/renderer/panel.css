@@ -37,7 +37,7 @@ body { padding: 0; }
   display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 10px 12px;
   text-align: left; background: var(--card); border-radius: 14px; box-shadow: inset 0 0 0 1px var(--card-line);
 }
-.devin-session:hover, .devin-session:focus-visible { background: var(--hover); }
+button.devin-session:hover, button.devin-session:focus-visible { background: var(--hover); }
 .devin-session-copy { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .devin-session-copy .muted, .devin-status { font-size: 11px; }
 .devin-status { padding: 4px 8px; border-radius: 999px; background: var(--hover); text-transform: capitalize; flex: none; }
