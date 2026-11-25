@@ -8,11 +8,15 @@ const ON = 1, OFF = 2, CONNECTED = 1;
 const WIFI_SETTINGS = 'ms-settings:network-wifi';
 const NETWORK_SETTINGS = 'ms-settings:network';
 
-function bindWlan() {
+function loadWlanLibrary(koffi) {
+  return koffi.load(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wlanapi.dll'));
+}
+
+function bindWlan(load = loadWlanLibrary) {
   if (process.platform !== 'win32') return null;
   try {
     const koffi = require('koffi');
-    const dll = koffi.load(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wlanapi.dll'));
+    const dll = load(koffi);
     const guid = koffi.struct('OpenBarWifiGuid', {
       data1: 'uint32_t', data2: 'uint16_t', data3: 'uint16_t', data4: koffi.array('uint8_t', 8),
     });
@@ -28,8 +32,8 @@ function bindWlan() {
     const phySize = koffi.sizeof(phy);
     return {
       async withAdapters(use) {
-        const handle = [], list = [];
-        if (await open(2, null, [], handle) !== 0) return null;
+        const version = [0], handle = [null], list = [null];
+        if (await open(2, null, version, handle) !== 0 || !handle[0]) return null;
         try {
           if (await enumerate(handle[0], null, list) !== 0 || !list[0]) return null;
           const count = koffi.decode(list[0], 'uint32_t');
@@ -37,7 +41,7 @@ function bindWlan() {
           const interfaces = count ? koffi.decode(list[0], 8, info, count) : [];
           const adapters = [];
           for (const adapter of interfaces) {
-            const size = [], data = [];
+            const size = [0], data = [null];
             let radios = [];
             if (await query(handle[0], adapter.guid, RADIO_STATE, null, size, data, null) === 0 && data[0]) {
               try {
@@ -111,4 +115,4 @@ function createWifiControls(openExternal, loadWlan = bindWlan) {
   };
 }
 
-module.exports = { createWifiControls };
+module.exports = { createWifiControls, bindWlan };

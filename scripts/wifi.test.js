@@ -1,11 +1,44 @@
 'use strict';
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createWifiControls } = require('../src/main/wifi');
+const { createWifiControls, bindWlan } = require('../src/main/wifi');
 
 const radio = (index, software, hardware) => ({ index, software, hardware });
 const adapter = (radios, connected = false, setRadio = () => true) => ({ radios, connected, setRadio });
 const controls = (adapters) => createWifiControls(() => {}, () => ({ withAdapters: (use) => use(adapters) }));
+
+test('reads populated Native Wi-Fi output parameters and closes its handle', { skip: process.platform !== 'win32' }, async () => {
+  const session = {};
+  const interfaces = Buffer.alloc(8 + 16 + 512 + 4);
+  interfaces.writeUInt32LE(1); // One interface.
+  interfaces.writeUInt32LE(1, interfaces.length - 4); // Connected.
+  const radios = Buffer.alloc(16);
+  radios.writeUInt32LE(1); // One PHY.
+  radios.writeUInt32LE(1, 8);
+  radios.writeUInt32LE(1, 12);
+  const closed = [], freed = [];
+  // Koffi only copies an _Out_ value back into an array with an existing slot.
+  const output = (slot, value) => { if (slot.length) slot[0] = value; };
+  const wlan = {
+    WlanOpenHandle(_version, _reserved, version, handle) { output(version, 2); output(handle, session); },
+    WlanEnumInterfaces(handle, _reserved, list) { assert.equal(handle, session); output(list, interfaces); },
+    WlanQueryInterface(handle, _guid, _opcode, _reserved, size, data) {
+      assert.equal(handle, session); output(size, radios.length); output(data, radios);
+    },
+    WlanCloseHandle(handle) { closed.push(handle); },
+  };
+  const native = bindWlan(() => ({
+    func(signature) {
+      const [, name] = /__stdcall (\w+)\(/.exec(signature);
+      if (name === 'WlanFreeMemory') return (buffer) => freed.push(buffer);
+      return { async(...args) { const done = args.pop(); wlan[name](...args); done(null, 0); } };
+    },
+  }));
+  const wifi = createWifiControls(() => {}, () => native);
+  assert.deepEqual(await wifi.status(), { radio: 'on', connected: true, canToggle: true });
+  assert.deepEqual(freed, [radios, interfaces]);
+  assert.deepEqual(closed, [session]);
+});
 
 test('distinguishes missing WLAN support, no adapters, incomplete reads and a hardware block', async () => {
   const unavailable = createWifiControls(() => {}, () => null);
