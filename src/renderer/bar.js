@@ -99,7 +99,7 @@ W.system = () => {
 };
 W.network = () => {
   const n = OB.state.net;
-  return panelBtn('network', '', icon('wifi', 16), h('div', { class: 'stack network-rates' },
+  return panelBtn('network', '', icon('globe', 16), h('div', { class: 'stack network-rates' },
     n && h('span', { class: 'val' }, '↓ ' + fmt.rate(n.down)), n && h('span', { class: 'val' }, '↑ ' + fmt.rate(n.up))));
 };
 let battery = null;
