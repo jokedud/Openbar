@@ -12,12 +12,20 @@ function trayLayoutMigration(settings) {
   return patch;
 }
 
-function parseEntries(result) {
+function parseEntries(result, ownPid = process.pid) {
   const entries = new Map();
-  for (const { Id: id, Name: name } of Array.isArray(result?.Items) ? result.Items.filter(Boolean) : []) {
+  for (const item of Array.isArray(result?.Items) ? result.Items.filter(Boolean) : []) {
+    const { Id: id, Name: name, AppName: appName, Exe: exe, IconPng: png, OwnerPid: ownerPid } = item;
     if (typeof id !== 'string' || !/^(tray|overflow):\d{1,3}$/.test(id) ||
         typeof name !== 'string' || !name.trim() || entries.has(id)) continue;
-    entries.set(id, { name, label: name.trim().split(/\r?\n/, 1)[0].slice(0, 160), inOverflow: id.startsWith('overflow:') });
+    if (ownerPid === ownPid || /^OpenBar$/i.test(name.trim())) continue;
+    const tooltipLabel = name.trim().split(/\r?\n|\s+is running\b|\s+-\s+(?=\d)/i, 1)[0].trim();
+    const label = (typeof appName === 'string' && appName.trim()) || tooltipLabel || name.trim();
+    entries.set(id, {
+      name, label: label.slice(0, 160), inOverflow: id.startsWith('overflow:'),
+      exe: typeof exe === 'string' ? exe : '',
+      icon: typeof png === 'string' && png.startsWith('iVBORw0KGgo') ? `data:image/png;base64,${png}` : '',
+    });
   }
   return entries;
 }
@@ -47,8 +55,9 @@ async function queryTray(request, onStart) {
 }
 
 class TrayApps {
-  constructor(query = queryTray) {
+  constructor(query = queryTray, fileIcon = async () => '') {
     this.query = query;
+    this.fileIcon = fileIcon;
     this.entries = new Map();
     this.busy = false;
   }
@@ -61,7 +70,10 @@ class TrayApps {
       const result = await this.query({}, isCurrent);
       if (!result || !isCurrent()) return null;
       this.entries = parseEntries(result);
-      return Array.from(this.entries, ([id, { label, inOverflow }]) => ({ id, label, inOverflow }));
+      return await Promise.all(Array.from(this.entries, async ([id, entry]) => ({
+        id, label: entry.label, tooltip: entry.name, inOverflow: entry.inOverflow,
+        icon: entry.icon || (entry.exe ? await this.fileIcon(entry.exe) : ''),
+      })));
     } catch {
       return null;
     } finally {

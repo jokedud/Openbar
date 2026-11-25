@@ -26,16 +26,20 @@ async function loadTrayApps(target) {
   const ordered = [...items].sort((a, b) => Number(b.inOverflow) - Number(a.inOverflow));
   for (const item of ordered) {
     const context = (event) => { event.preventDefault(); activate(item, 'menu'); };
+    const badge = h('span', { class: 'tray-apps-glyph', 'aria-hidden': 'true' }, Array.from(item.label)[0].toUpperCase());
+    if (item.icon) {
+      const img = h('img', { src: item.icon, alt: '', draggable: 'false', onerror: () => img.remove() });
+      badge.append(img);
+    }
     const row = h('button', {
       class: 'tray-apps-item',
-      title: item.label,
+      title: item.tooltip,
       onclick: () => activate(item, 'open'),
       oncontextmenu: context,
       onkeydown: (event) => {
         if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) context(event);
       },
-    }, h('span', { class: 'tray-apps-glyph', 'aria-hidden': 'true' }, Array.from(item.label)[0].toUpperCase()),
-    h('span', { class: 'ellipsis' }, item.label));
+    }, badge, h('span', { class: 'ellipsis' }, item.label));
     list.append(row);
   }
   const message = h('div', { class: 'tray-apps-hint', role: 'status' }, 'Click to open · Right-click for app options');

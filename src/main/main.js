@@ -955,7 +955,7 @@ app.whenReady().then(() => {
   if (isWin) {
     taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
     batteryNative = createBattery();
-    trayApps = new TrayApps();
+    trayApps = new TrayApps(undefined, exeIcon);
   }
   windowPreview = new WindowPreviewController({
     createSurfaceWindow,

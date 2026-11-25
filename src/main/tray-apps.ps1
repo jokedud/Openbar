@@ -1,16 +1,21 @@
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $request = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encodedRequest)) | ConvertFrom-Json
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase, Accessibility
-Add-Type -ReferencedAssemblies UIAutomationClient, UIAutomationTypes, WindowsBase, Accessibility -TypeDefinition @'
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase, Accessibility, System.Drawing
+Add-Type -ReferencedAssemblies UIAutomationClient, UIAutomationTypes, WindowsBase, Accessibility, System.Drawing -TypeDefinition @'
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using Accessibility;
+using Microsoft.Win32;
 
 public static class OpenBarTray
 {
@@ -40,6 +45,29 @@ public static class OpenBarTray
     private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")]
     private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessageTimeout(IntPtr window, uint msg, IntPtr wParam, IntPtr lParam,
+        uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll")]
+    private static extern IntPtr CopyIcon(IntPtr icon);
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr icon);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr VirtualAllocEx(IntPtr process, IntPtr address, UIntPtr size, uint allocation, uint protect);
+    [DllImport("kernel32.dll")]
+    private static extern bool VirtualFreeEx(IntPtr process, IntPtr address, UIntPtr size, uint type);
+    [DllImport("kernel32.dll")]
+    private static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] bytes, UIntPtr length, out UIntPtr read);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder path, ref int length);
+    [DllImport("shell32.dll")]
+    private static extern int SHGetKnownFolderPath(ref Guid folder, uint flags, IntPtr token, out IntPtr path);
     [DllImport("oleacc.dll")]
     private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out IAccessible accessible);
@@ -52,6 +80,10 @@ public static class OpenBarTray
     {
         public string Id { get; set; }
         public string Name { get; set; }
+        public uint OwnerPid { get; set; }
+        public string Exe { get; set; }
+        public string AppName { get; set; }
+        public string IconPng { get; set; }
         internal Rect Bounds;
         internal IntPtr Surface;
     }
@@ -67,7 +99,100 @@ public static class OpenBarTray
         return parent == IntPtr.Zero ? IntPtr.Zero : FindWindowEx(parent, IntPtr.Zero, name, null);
     }
 
-    private static void ReadToolbar(List<Entry> entries, IntPtr surface, IntPtr parent, string section)
+    private static string ExePath(uint pid)
+    {
+        if (pid == 0) return null;
+        IntPtr process = OpenProcess(0x1000, false, pid);
+        if (process == IntPtr.Zero) return null;
+        try
+        {
+            var path = new StringBuilder(2048);
+            int length = path.Capacity;
+            return QueryFullProcessImageName(process, 0, path, ref length) ? path.ToString() : null;
+        }
+        finally { CloseHandle(process); }
+    }
+
+    private static void SetExe(Entry entry, string exe)
+    {
+        if (String.IsNullOrEmpty(exe)) return;
+        entry.Exe = exe;
+        if (String.Equals(exe, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
+            StringComparison.OrdinalIgnoreCase)) return;
+        try { entry.AppName = FileVersionInfo.GetVersionInfo(exe).FileDescription; }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private static string IconPng(IntPtr handle)
+    {
+        IntPtr icon = CopyIcon(handle);
+        if (icon == IntPtr.Zero) return null;
+        try
+        {
+            using (var source = Icon.FromHandle(icon))
+            using (var bitmap = source.ToBitmap())
+            using (var stream = new MemoryStream())
+            {
+                bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                return Convert.ToBase64String(stream.ToArray());
+            }
+        }
+        catch (ArgumentException) { return null; }
+        catch (ExternalException) { return null; }
+        finally { DestroyIcon(icon); }
+    }
+
+    private static IntPtr ReadPointer(byte[] bytes, int offset)
+    {
+        return IntPtr.Size == 8 ? new IntPtr(BitConverter.ToInt64(bytes, offset)) : new IntPtr(BitConverter.ToInt32(bytes, offset));
+    }
+
+    private static bool ReadBytes(IntPtr process, IntPtr address, byte[] buffer)
+    {
+        UIntPtr read;
+        var length = new UIntPtr((uint)buffer.Length);
+        return address != IntPtr.Zero && ReadProcessMemory(process, address, buffer, length, out read) && read == length;
+    }
+
+    private static void ReadToolbarMetadata(List<Entry> entries, IntPtr toolbar, int first)
+    {
+        uint shellPid;
+        GetWindowThreadProcessId(toolbar, out shellPid);
+        // TB_GETBUTTON writes into Explorer; dwData points to its classic notification record.
+        IntPtr shell = OpenProcess(0x0018, false, shellPid);
+        if (shell == IntPtr.Zero) return;
+        IntPtr remote = IntPtr.Zero;
+        try
+        {
+            int dataOffset = IntPtr.Size == 8 ? 16 : 12;
+            var button = new byte[dataOffset + IntPtr.Size * 2];
+            var data = new byte[16 + IntPtr.Size * 2];
+            remote = VirtualAllocEx(shell, IntPtr.Zero, new UIntPtr((uint)button.Length), 0x3000, 4);
+            if (remote == IntPtr.Zero) return;
+            for (int i = first; i < entries.Count; i++)
+            {
+                Entry entry = entries[i];
+                int index = Int32.Parse(entry.Id.Substring(entry.Id.IndexOf(':') + 1));
+                IntPtr result;
+                if (SendMessageTimeout(toolbar, 0x0417, new IntPtr(index), remote, 2, 150, out result) == IntPtr.Zero) break;
+                if (result == IntPtr.Zero || !ReadBytes(shell, remote, button) ||
+                    !ReadBytes(shell, ReadPointer(button, dataOffset), data)) continue;
+                uint pid;
+                GetWindowThreadProcessId(ReadPointer(data, 0), out pid);
+                entry.OwnerPid = pid;
+                SetExe(entry, ExePath(pid));
+                entry.IconPng = IconPng(ReadPointer(data, 16 + IntPtr.Size));
+            }
+        }
+        finally
+        {
+            if (remote != IntPtr.Zero) VirtualFreeEx(shell, remote, UIntPtr.Zero, 0x8000);
+            CloseHandle(shell);
+        }
+    }
+
+    private static void ReadToolbar(List<Entry> entries, IntPtr surface, IntPtr parent, string section, bool metadata)
     {
         IntPtr toolbar = Child(parent, "ToolbarWindow32");
         if (toolbar == IntPtr.Zero) return;
@@ -77,6 +202,7 @@ public static class OpenBarTray
         object[] children = new object[Math.Min(128, accessible.accChildCount)];
         int obtained;
         if (AccessibleChildren(accessible, 0, children.Length, children, out obtained) < 0) return;
+        int first = entries.Count;
         for (int i = 0; i < obtained; i++)
         {
             object child = children[i];
@@ -94,6 +220,54 @@ public static class OpenBarTray
                     Bounds = new Rect(x, y, Math.Max(0, w), Math.Max(0, h)), Surface = surface });
             }
             catch (COMException) { }
+        }
+        if (metadata) ReadToolbarMetadata(entries, toolbar, first);
+    }
+
+    private static string ResolveExe(string value)
+    {
+        if (String.IsNullOrWhiteSpace(value)) return null;
+        string exe = Environment.ExpandEnvironmentVariables(value.Trim());
+        int close = exe.IndexOf('}');
+        Guid folder;
+        if (exe.StartsWith("{", StringComparison.Ordinal) && close > 0 &&
+            Guid.TryParse(exe.Substring(0, close + 1), out folder))
+        {
+            IntPtr path;
+            if (SHGetKnownFolderPath(ref folder, 0, IntPtr.Zero, out path) != 0) return null;
+            try { exe = Marshal.PtrToStringUni(path) + exe.Substring(close + 1); }
+            finally { Marshal.FreeCoTaskMem(path); }
+        }
+        return File.Exists(exe) ? exe : null;
+    }
+
+    private static void ReadModernMetadata(List<Entry> entries)
+    {
+        // UIA identifies the live icon, while Explorer's per-user registry supplies its executable.
+        using (var settings = Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings"))
+        {
+            if (settings == null) return;
+            var candidates = new List<KeyValuePair<string, string>>();
+            foreach (string key in settings.GetSubKeyNames())
+            {
+                using (var icon = settings.OpenSubKey(key))
+                {
+                    if (icon == null) continue;
+                    string label = icon.GetValue("InitialTooltip") as string;
+                    string exe = ResolveExe(icon.GetValue("ExecutablePath") as string);
+                    if (!String.IsNullOrWhiteSpace(label) && exe != null)
+                        candidates.Add(new KeyValuePair<string, string>(label.Trim(), exe));
+                }
+            }
+            foreach (Entry entry in entries)
+            {
+                var matches = candidates.Where(icon => String.Equals(icon.Key, entry.Name, StringComparison.OrdinalIgnoreCase) ||
+                    entry.Name.StartsWith(icon.Key + " is ", StringComparison.OrdinalIgnoreCase) ||
+                    entry.Name.StartsWith(icon.Key + " - ", StringComparison.OrdinalIgnoreCase) ||
+                    entry.Name.StartsWith(icon.Key + "\n", StringComparison.OrdinalIgnoreCase))
+                    .Select(icon => icon.Value).Distinct(StringComparer.OrdinalIgnoreCase).Take(2).ToArray();
+                if (matches.Length == 1) SetExe(entry, matches[0]);
+            }
         }
     }
 
@@ -178,7 +352,7 @@ public static class OpenBarTray
             if (needsVisibleTray && restoreTaskbar) ShowWindow(taskbar, 8);
             if (!activating || id.StartsWith("tray:", StringComparison.Ordinal))
             {
-                if (classic) ReadToolbar(result.Items, taskbar, Child(notify, "SysPager"), "tray");
+                if (classic) ReadToolbar(result.Items, taskbar, Child(notify, "SysPager"), "tray", !activating);
                 else ReadModern(result.Items, taskbar, "tray");
             }
             if (!activating || id.StartsWith("overflow:", StringComparison.Ordinal))
@@ -197,9 +371,10 @@ public static class OpenBarTray
                         Thread.Sleep(150);
                     }
                 }
-                if (classic) ReadToolbar(result.Items, overflow, overflow, "overflow");
+                if (classic) ReadToolbar(result.Items, overflow, overflow, "overflow", !activating);
                 else ReadModern(result.Items, overflow, "overflow");
             }
+            if (!classic && !activating) ReadModernMetadata(result.Items);
             if (activating)
             {
                 Entry entry = result.Items.FirstOrDefault(item => item.Id == id && item.Name == name);

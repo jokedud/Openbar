@@ -12,7 +12,9 @@
 .tray-apps-item:hover, .tray-apps-item:focus-visible { background: var(--hover); }
 .tray-apps-item:active { transform: scale(.98); }
 .tray-apps-glyph {
-  display: grid; place-items: center; width: 24px; height: 24px; flex: none;
+  position: relative; display: grid; place-items: center; width: 24px; height: 24px; flex: none;
   border-radius: 8px; background: var(--active); font-weight: 700;
 }
+.tray-apps-glyph:has(img) { color: transparent; background: none; }
+.tray-apps-glyph img { position: absolute; inset: 2px; width: 20px; height: 20px; object-fit: contain; }
 .tray-apps-hint { padding: 8px 3px 0; color: var(--muted); font-size: 11px; }
