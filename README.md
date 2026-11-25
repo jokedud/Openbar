@@ -2,9 +2,9 @@
 
 A free, open-source smart dock and taskbar replacement for Windows 10/11, with live widgets. Inspired by [Lumabar](https://lumabar.xyz), and MIT licensed.
 
-[![Animated preview of OpenBar switching between dock tabs; click to watch the introduction](docs/media/openbar-preview.gif)](docs/media/openbar-intro.mp4?raw=true)
+![OpenBar’s floating glass dock on a dark Windows desktop with two Edge windows](docs/media/floating-dock.png)
 
-[Watch the 50-second introduction (MP4, with sound)](docs/media/openbar-intro.mp4?raw=true) · Music: “Dog Shakes Hand” by Dog Plays Dead.
+[Watch the 49-second introduction (MP4, with sound)](docs/media/openbar-intro.mp4?raw=true) · Music: “Dog Shakes Hand” by Dog Plays Dead · Maps: [© OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
 
 ## Download
 
@@ -28,35 +28,44 @@ The builds are not code-signed yet, so Windows SmartScreen may warn you. Click *
 - **Devin companion**: the animated fold cursor appears during active work, and the pixel otter on the dock can catch it when work stops. The otter has its own little elevator.
 - **Automations**: pause music before meetings, meeting reminders, umbrella reminder, high-CPU and low-disk alerts, pause music when a focus session starts.
 - **Customization**: top or bottom placement, full-width or floating pill layout, six themes, adjustable height and gap, three widget zones (left, center, right), and app labels. Backup export/import is included.
-- **Custom tabs**: create, rename and reorder tabs in Settings → Custom tabs. Fill each one with live widgets or app, website and folder shortcuts. Switch tabs on the dock to change its left-side items, or select Home to return to your normal layout.
+- **Custom tabs**: create, rename and reorder tabs in Settings → Custom tabs. Fill each one with live widgets or app, website and folder shortcuts. Switch tabs on the dock to change its left-side items, or select the Windows logo to return to the default widgets.
 - **Private**: no accounts and no telemetry. Settings and data stay in `%APPDATA%\OpenBar`.
 
 ## Screenshots
 
-**Home and custom tabs.** Keep pinned apps on Home, then switch to a tab with its own widgets and shortcuts.
+### Custom tabs
 
-![The floating glass dock on Home with pinned apps, weather, tray controls, and a pixel otter](docs/media/floating-dock.png)
-![The same dock on the Studio tab with Notes, Focus, To-dos, and a project shortcut](docs/media/custom-tabs.png)
+The Studio tab puts Notes, Focus, To-dos, and a project shortcut on the dock. The Windows logo switches back to the default widgets.
 
-**Window previews.** Hover over a running app to see its open windows side by side.
+![OpenBar’s Studio tab with the Windows-logo default tab visible on the left](docs/media/custom-tabs.png)
 
-![Two live File Explorer thumbnails above the grouped Explorer icon on the dock](docs/media/hover-window-previews.png)
+### Live window previews
 
-**Tray controls.** These screenshots show the Windows Settings shortcuts and fallback states on a desktop without the corresponding hardware.
+Hover over a running app to see its open windows side by side.
 
-| Power | Volume | Wi-Fi |
-| --- | --- | --- |
-| ![Power panel showing plugged-in status and Power & sleep settings](docs/media/power.png) | ![Volume panel with a Windows sound settings shortcut](docs/media/volume.png) | ![Network panel with live speeds and a network settings shortcut](docs/media/wifi.png) |
+![Two live Edge thumbnails above the grouped Edge icon on the dock](docs/media/hover-window-previews.png)
 
-| Bluetooth | Brightness |
-| --- | --- |
-| ![Bluetooth panel with a Windows Bluetooth settings shortcut](docs/media/bluetooth.png) | ![Brightness panel with a Windows display settings shortcut](docs/media/brightness.png) |
+### System at a glance
 
-**Devin sessions and companion.** The sessions below are sample local data. Watch the intro to see the fold cursor and the otter's elevator in motion.
+Open the System widget to check live CPU, memory, disk usage, and uptime.
 
-| Sessions | Fold cursor and otter | Otter elevator |
-| --- | --- | --- |
-| ![Devin sessions bubble with three sample local sessions](docs/media/devin-sessions.png) | ![Devin fold cursor above the dock and the pixel otter perched on the right](docs/media/devin-companion.png) | ![Close-up of the otter riding its pixel elevator](docs/media/otter-elevator.png) |
+![System pop-out with live CPU, memory, disk, and uptime readings](docs/media/system-widget.png)
+
+### Devin sessions and companion
+
+Open recent local sessions from the dock. The example below uses sample local sessions.
+
+![Devin sessions bubble with three sample local sessions](docs/media/devin-sessions.png)
+
+The fold cursor appears during active work, and the pixel otter has its own elevator.
+
+![The Devin fold cursor over the desktop and the pixel otter on the right of the dock](docs/media/devin-companion.png)
+
+![The pixel otter stepping into its elevator above the dock](docs/media/otter-elevator.png)
+
+### See it in motion
+
+[![Animated preview of OpenBar switching tabs; click to watch the full introduction](docs/media/openbar-preview.gif)](docs/media/openbar-intro.mp4?raw=true)
 
 ## Development
 
