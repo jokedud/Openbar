@@ -145,6 +145,9 @@ async function pollWindows() {
     dataStore.save();
     if (now - (pollWindows.stSent || 0) > 30000) { pollWindows.stSent = now; broadcast('data', D()); }
   }
+  const previousOrder = new Map(state.windows.map((w, i) => [w.hwnd, i]));
+  const rank = (w) => previousOrder.get(w.hwnd) ?? previousOrder.size;
+  list.sort((a, b) => rank(a) - rank(b));
   const sig = JSON.stringify(list.map((w) => [w.hwnd, w.title, w.minimized])) + active;
   if (sig !== pollWindows.sig) {
     pollWindows.sig = sig;
