@@ -47,7 +47,8 @@ W.apps = () => {
     const list = byPath.get(target) || [];
     used.add(target);
     const active = list.some((w) => w.hwnd === st.activeHwnd);
-    box.append(h('button', { class: `app ${active ? 'active' : ''}`, title: p.name + (list.length ? ` (${list.length} open)` : ''), 'data-pin': i, draggable: 'true' },
+    const labelText = p.name + (list.length ? ` (${list.length} open)` : '');
+    box.append(h('button', { class: `app ${active ? 'active' : ''}`, title: list.length ? null : p.name, 'aria-label': labelText, 'data-pin': i, draggable: 'true' },
       appImg(iconSync(p.path), p.name), s.showLabels ? h('span', { class: 'label' }, p.name) : null,
       list.length ? h('span', { class: 'dot' }) : null, list.length > 1 ? h('span', { class: 'count' }, list.length) : null));
   });
@@ -59,7 +60,8 @@ W.apps = () => {
   for (const g of groups) {
     const w = g.find((x) => x.hwnd === st.activeHwnd) || g[0];
     const active = g.some((x) => x.hwnd === st.activeHwnd);
-    box.append(h('button', { class: `app ${active ? 'active' : ''}`, title: g.length > 1 ? `${w.exe}: ${g.length} windows` : w.title, 'data-hwnds': g.map((x) => x.hwnd).join(',') },
+    const labelText = g.length > 1 ? `${w.exe}: ${g.length} windows` : w.title;
+    box.append(h('button', { class: `app ${active ? 'active' : ''}`, 'aria-label': labelText, 'data-hwnds': g.map((x) => x.hwnd).join(',') },
       appImg(w.icon, w.exe), s.showLabels || !s.pinned.length ? h('span', { class: 'label' }, g.length > 1 ? w.exe.replace(/\.exe$/i, '') : w.title) : null,
       h('span', { class: 'dot' }), g.length > 1 ? h('span', { class: 'count' }, g.length) : null));
   }
@@ -252,7 +254,46 @@ function cycle(wins) {
   api.invoke('win:action', wins[(i + 1) % wins.length].hwnd, 'focus');
 }
 
+// ---------------- hover window previews ----------------
+let hoveredPreviewKey = null;
+function previewTargetFor(button) {
+  if (!button || !button.classList.contains('app')) return null;
+  if (button.dataset.hwnds) {
+    const hwnds = button.dataset.hwnds.split(',').map(Number).filter(Boolean);
+    const wins = (OB.state.windows || []).filter((w) => hwnds.includes(w.hwnd));
+    if (!wins.length) return null;
+    const appKey = OB.settings.groupWindows ? (wins[0].path || wins[0].exe || '').toLowerCase() : `hwnd:${wins[0].hwnd}`;
+    return { hwnds: wins.map((w) => w.hwnd), appKey };
+  }
+  if (button.dataset.pin != null) {
+    const p = OB.settings.pinned[+button.dataset.pin];
+    if (!p) return null;
+    const wins = runningFor(p);
+    if (!wins.length) return null;
+    const appKey = (p.target || p.path || '').toLowerCase();
+    return { hwnds: wins.map((w) => w.hwnd), appKey };
+  }
+  return null;
+}
+function clearDockPreview(immediate = false) {
+  if (hoveredPreviewKey != null || immediate) {
+    hoveredPreviewKey = null;
+    if (typeof api !== 'undefined') api.send(immediate ? 'preview:dismiss' : 'preview:leave-dock');
+  }
+}
+document.addEventListener('pointermove', (e) => {
+  if (dragFrom != null || openPanel || e.buttons) { clearDockPreview(true); return; }
+  const btn = e.target.closest('button.app');
+  const target = previewTargetFor(btn);
+  if (!target) { clearDockPreview(false); return; }
+  const key = `${target.appKey}|${target.hwnds.join(',')}`;
+  if (key === hoveredPreviewKey) return;
+  hoveredPreviewKey = key;
+  api.send('preview:hover', { ...target, anchorX: centerX(btn) });
+});
+
 document.addEventListener('click', (e) => {
+  clearDockPreview(true);
   const t = e.target.closest('button');
   if (!t) return;
   if (t.dataset.tabItem) return api.invoke('tabs:open', document.getElementById('bar').dataset.customTab, t.dataset.tabItem);
@@ -269,12 +310,14 @@ document.addEventListener('click', (e) => {
   }
 });
 document.addEventListener('auxclick', (e) => {
+  clearDockPreview(true);
   const t = e.target.closest('button');
   if (e.button !== 1 || !t) return;
   if (t.dataset.pin != null) api.invoke('launch', OB.settings.pinned[+t.dataset.pin]);
   if (t.dataset.hwnds) { const w = OB.state.windows.find((x) => x.hwnd === Number(t.dataset.hwnds.split(',')[0])); if (w && w.path) api.invoke('launch', { path: w.path }); }
 });
 document.addEventListener('contextmenu', async (e) => {
+  clearDockPreview(true);
   e.preventDefault();
   const t = e.target.closest('button');
   if (t && t.dataset.hwnds) return windowMenu(t.dataset.hwnds.split(',').map(Number));
@@ -312,7 +355,7 @@ document.addEventListener('contextmenu', async (e) => {
 
 // drag to reorder pinned apps
 let dragFrom = null;
-document.addEventListener('dragstart', (e) => { const t = e.target.closest('[data-pin]'); if (t) { dragFrom = +t.dataset.pin; t.classList.add('dragging'); } });
+document.addEventListener('dragstart', (e) => { clearDockPreview(true); const t = e.target.closest('[data-pin]'); if (t) { dragFrom = +t.dataset.pin; t.classList.add('dragging'); } });
 document.addEventListener('dragover', (e) => { if (dragFrom != null) e.preventDefault(); });
 document.addEventListener('drop', (e) => {
   const t = e.target.closest('[data-pin]');
@@ -329,7 +372,9 @@ document.addEventListener('dragend', (e) => {
 });
 
 OB.init().then(() => {
-  observeSurface(document.getElementById('bar'));
+  const barEl = document.getElementById('bar');
+  observeSurface(barEl);
+  barEl?.addEventListener?.('mouseleave', () => clearDockPreview(false));
   OB.on(scheduleRender);
   api.on('panel', (name) => { openPanel = name; scheduleRender(); });
   setInterval(scheduleRender, 1000);

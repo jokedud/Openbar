@@ -13,7 +13,7 @@ const files = [];
 
 for (const f of files) execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' });
 const pkg = require('../package.json');
-for (const f of ['src/renderer/bar.html', 'src/renderer/panel.html', 'src/renderer/settings.html', 'src/renderer/assets/icon.png', pkg.main]) {
+for (const f of ['src/renderer/bar.html', 'src/renderer/panel.html', 'src/renderer/preview.html', 'src/renderer/settings.html', 'src/renderer/assets/icon.png', pkg.main]) {
   if (!fs.existsSync(path.join(__dirname, '..', f))) { console.error('missing', f); process.exit(1); }
 }
 console.log(`ok: ${files.length} files`);
