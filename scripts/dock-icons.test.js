@@ -28,7 +28,11 @@ function loadDock(pin, hasLogo) {
   vm.runInNewContext(fs.readFileSync(mainPath, 'utf8') + '\nregisterIpc();', {
     __dirname: path.dirname(mainPath),
     process: { platform: 'win32', env: { SystemRoot: systemRoot }, on() {} },
-    require: (id) => ({ path, electron: { app, nativeImage, ipcMain }, './bluetooth': require('../src/main/bluetooth') }[id] || {}),
+    require: (id) => ({
+      path, electron: { app, nativeImage, ipcMain },
+      './bluetooth': require('../src/main/bluetooth'),
+      './notifications': require('../src/main/notifications'),
+    }[id] || {}),
   }, { filename: mainPath });
 
   const pending = [];

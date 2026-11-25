@@ -6,6 +6,8 @@ const P = {};
 const stable = new Set(['start', 'todos', 'notes', 'devin', 'bluetooth']); // panels with local state: don't rebuild on every tick
 let networkPanel;
 function disposeNetworkPanel() { networkPanel?.dispose(); networkPanel = null; }
+let stopNotificationsPanel;
+function unmountNotificationsPanel() { stopNotificationsPanel?.(); stopNotificationsPanel = null; }
 
 function syncHandlers(prev, next) {
   if (!prev._obOn && !next._obOn) return;
@@ -562,6 +564,13 @@ async function draw(force) {
     stopVolumePanel = mountVolumePanel($('body'));
     return;
   }
+  if (widget === 'notifications') {
+    if (force !== 'switch') return;
+    unmountNotificationsPanel();
+    $('body').replaceChildren();
+    stopNotificationsPanel = mountNotificationsPanel($('body'), setHead);
+    return;
+  }
   if (stable.has(widget) && (!force || (['devin', 'bluetooth'].includes(widget) && force !== 'switch'))) return;
   const drawing = widget;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
@@ -596,6 +605,7 @@ OB.init().then(() => {
     disposeNetworkPanel();
     unmountVolumePanel();
     unmountBatteryPanel();
+    unmountNotificationsPanel();
     widget = w; query = ''; sel = 0;
     draw('switch').then(() => {
       if (widget !== w) return;
@@ -617,6 +627,7 @@ OB.init().then(() => {
     if (w !== 'brightness') clearBrightness();
     if (w !== 'network') disposeNetworkPanel();
     if (w !== 'battery') unmountBatteryPanel();
+    if (w !== 'notifications') unmountNotificationsPanel();
     if (!w) { clearEnterBody(); $('panel').classList.remove('enter'); }
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
