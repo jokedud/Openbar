@@ -433,7 +433,7 @@ function togglePanel(widget, anchorX) {
   if (panelWidget === 'battery') stopBatteryEstimate();
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
   const power = widget === 'battery' ? batteryNative?.read() : null;
-  const [w, preferredH] = power?.present === false && power.saver == null ?
+  const [w, preferredH] = power?.present === false ?
     [PANEL_SIZES.battery[0], 266] : PANEL_SIZES[widget] || [360, 420];
   const radius = widget === 'devin' ? DEVIN_PANEL_RADIUS : PANEL_RADIUS;
   const bb = bar.getBounds();
