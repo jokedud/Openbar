@@ -47,7 +47,7 @@ const DEFAULT_DATA = {
 };
 
 function deepMerge(base, over) {
-  if (Array.isArray(base) || Array.isArray(over) || typeof base !== 'object' || base === null) {
+  if (over === null || Array.isArray(base) || Array.isArray(over) || typeof base !== 'object' || base === null) {
     return over === undefined ? base : over;
   }
   const out = { ...base };
