@@ -141,6 +141,7 @@ function icon(name, size = 16) {
   return s;
 }
 const ICONS = {
+  tray: '<path d="m6 15 6-6 6 6"/>',
   devin: '<rect x="4" y="7" width="16" height="13" rx="5"/><path d="M12 4v3M9 13h.01M15 13h.01"/>',
   dot: '<circle cx="12" cy="12" r="3"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
