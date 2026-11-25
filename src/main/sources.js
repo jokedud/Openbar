@@ -62,6 +62,9 @@ async function getJson(url, opts = {}) {
   const t = setTimeout(() => ctl.abort(), 15000);
   try {
     const r = await fetch(url, { ...opts, signal: ctl.signal, headers: { 'User-Agent': 'OpenBar/0.1', ...(opts.headers || {}) } });
+    if ((r.status === 429 || (r.status === 403 && r.headers.get('x-ratelimit-remaining') === '0')) && new URL(url).hostname === 'api.github.com') {
+      throw new Error('GitHub rate limit reached. Try again later or add a token in GitHub & crypto settings.');
+    }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } finally { clearTimeout(t); }
