@@ -191,27 +191,32 @@ test('the Devin bubble stays six pixels from the visible dock at either edge', (
     __dirname, settings, process: { platform: 'test', on() {} },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8'), context);
-  vm.runInContext('settingsStore = { get: () => settings }; bar = { getBounds: () => dock, isDestroyed: () => false, webContents: { send() {} } };', context);
+  const barPadding = 14, panelPadding = 24;
+  context.barPadding = barPadding;
+  vm.runInContext('settingsStore = { get: () => settings }; bar = { getBounds: () => ({ x: dock.x - barPadding, y: dock.y - barPadding, width: dock.width + 2 * barPadding, height: dock.height + 2 * barPadding }), isDestroyed: () => false, webContents: { send() {} } };', context);
+  const panelTop = () => bounds.y + panelPadding;
+  const panelBottom = () => bounds.y + bounds.height - panelPadding;
   context.dock = { x: 150, y: 734, width: 600, height: 66 };
-  vm.runInContext("togglePanel('devin', 350)", context);
-  assert.equal(bounds.y + bounds.height, context.dock.y + settings.margin - 6);
+  vm.runInContext(`togglePanel('devin', ${350 + barPadding})`, context);
+  assert.equal(panelBottom(), context.dock.y + settings.margin - 6);
   assert.equal(bounds.x + bounds.width / 2, 500);
+  assert.equal(bounds.width, 374 + 2 * panelPadding);
   const maxHeight = bounds.height;
   vm.runInContext("fitDevinPanel({ sender: {} }, 260)", context);
   assert.equal(bounds.height, maxHeight);
   vm.runInContext("fitDevinPanel({ sender: panel.webContents }, 260.4)", context);
-  assert.equal(bounds.height, 261);
-  assert.equal(bounds.y + bounds.height, context.dock.y + settings.margin - 6);
+  assert.equal(bounds.height, 261 + 2 * panelPadding);
+  assert.equal(panelBottom(), context.dock.y + settings.margin - 6);
   vm.runInContext("fitDevinPanel({ sender: panel.webContents }, 850)", context);
   assert.equal(bounds.height, maxHeight);
-  assert.equal(bounds.y + bounds.height, context.dock.y + settings.margin - 6);
+  assert.equal(panelBottom(), context.dock.y + settings.margin - 6);
   settings.position = 'top';
   context.dock.y = 0;
-  vm.runInContext("panel = null; togglePanel('devin', 350)", context);
-  assert.equal(bounds.y, context.dock.y + context.dock.height - settings.margin + 6);
+  vm.runInContext(`panel = null; togglePanel('devin', ${350 + barPadding})`, context);
+  assert.equal(panelTop(), context.dock.y + context.dock.height - settings.margin + 6);
   vm.runInContext("fitDevinPanel({ sender: panel.webContents }, 175)", context);
-  assert.equal(bounds.height, 175);
-  assert.equal(bounds.y, context.dock.y + context.dock.height - settings.margin + 6);
+  assert.equal(bounds.height, 175 + 2 * panelPadding);
+  assert.equal(panelTop(), context.dock.y + context.dock.height - settings.margin + 6);
 });
 
 function mainIpc(initialConfig, storedToken = 'cog_test') {

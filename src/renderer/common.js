@@ -24,10 +24,40 @@ function applyTheme() {
   document.documentElement.dataset.position = s.position || 'bottom';
   document.documentElement.dataset.layout = s.layout || 'full';
   document.documentElement.dataset.glass = OB.state.glass || 'off';
-  const height = s.height != null ? s.height : 46;
+  const height = s.height != null ? s.height : 54;
   document.documentElement.style.setProperty('--bar-h', height + 'px');
   document.documentElement.style.setProperty('--bar-r', Math.round(height * 0.3) + 'px');
   document.documentElement.style.setProperty('--bar-m', (s.margin != null ? s.margin : 6) + 'px');
+}
+
+function observeSurface(surface) {
+  if (OB.platform !== 'win32') return;
+  const reportBounds = () => api.send('surface:bounds', {
+    x: surface.offsetLeft, y: surface.offsetTop,
+    width: surface.offsetWidth, height: surface.offsetHeight,
+    radius: parseFloat(getComputedStyle(surface).borderTopLeftRadius),
+  });
+  const resize = new ResizeObserver(reportBounds);
+  resize.observe(surface);
+  resize.observe(document.body);
+  new MutationObserver(reportBounds).observe(surface, { attributes: true, attributeFilter: ['data-widget'] });
+
+  let overPadding = false;
+  function setOverPadding(next) {
+    if (overPadding === next) return;
+    overPadding = next;
+    api.send('surface:mouse', overPadding);
+  }
+  function checkMouse(e) {
+    if (e.buttons || e.sourceCapabilities?.firesTouchEvents) return;
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    setOverPadding(hit !== null && !surface.contains(hit));
+  }
+  document.addEventListener('mousemove', checkMouse);
+  document.addEventListener('mouseup', checkMouse);
+  document.addEventListener('dragend', checkMouse);
+  document.documentElement.addEventListener('mouseleave', (e) => { if (!e.buttons) setOverPadding(false); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) setOverPadding(false); });
 }
 
 // ---------- DOM ----------

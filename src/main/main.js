@@ -20,7 +20,7 @@ app.setAppUserModelId(APP_ID);
 
 let settingsStore, dataStore, devinStore, taskbarRecovery;
 let bar = null, panel = null, settingsWin = null, tray = null;
-let barHwnd = 0, panelHwnd = 0;
+let barHwnd = 0;
 let panelWidget = null;
 let devinPanelSize = null;
 const state = {
@@ -72,15 +72,19 @@ function layoutBar() {
   const reserved = reserveSpace();
   // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
   if (reserved && reserved.height > 0) b.y = reserved.y;
-  bar.setBounds(b);
-  clipGlass(bar, barHwnd, S().margin, barRadius(S().height), b);
+  bar.setBounds(padBounds(b, barShadowPadding()));
+  syncBackdrop(bar);
   bar.setAlwaysOnTop(true, 'screen-saver');
 }
 
-// ---------------- glass ----------------
-// Same ratios as --bar-r / --panel-r in theme.css and common.js, so the blur region matches the CSS shape.
-const barRadius = (height) => Math.round(height * 0.3);
-const PANEL_RADIUS = 18;
+// ---------------- floating surfaces ----------------
+const SHADOW_PADDING = 24; // --surface-padding in theme.css
+const barShadowPadding = () => Math.max(0, SHADOW_PADDING - S().margin);
+function padBounds({ x, y, width, height }, padding) {
+  return { x: x - padding, y: y - padding, width: width + 2 * padding, height: height + 2 * padding };
+}
+
+const backdrops = new WeakMap();
 let glassMode = 'off';
 function transparencyEnabled() {
   try {
@@ -89,32 +93,74 @@ function transparencyEnabled() {
     return !/REG_DWORD\s+0x0\b/.test(out);
   } catch { return true; }
 }
-function setBackdrop(hwnd, mode) {
+function applyBackdrop(hwnd, mode) {
   try { return win32.setBackdrop(hwnd, mode); } catch (e) { console.error('backdrop', e); return 'off'; }
 }
-// The bar decides whether glass is on; panels follow it so both windows always share one tint.
-function enableGlass(hwnd) {
-  if (!isWin || !hwnd) return;
-  glassMode = setBackdrop(hwnd, transparencyEnabled() ? 'blur' : 'off');
+function refreshGlass() {
+  if (!isWin) return;
+  const backdrop = backdrops.get(bar);
+  glassMode = backdrop ? applyBackdrop(backdrop.hwnd, transparencyEnabled() ? 'blur' : 'off') : 'off';
+  const panelBackdrop = backdrops.get(panel);
+  if (panelBackdrop) applyBackdrop(panelBackdrop.hwnd, glassMode);
   state.glass = glassMode;
   broadcast('state', { glass: glassMode });
+  syncBackdrop(bar);
+  syncBackdrop(panel);
 }
-// Windows broadcasts a theme change when "Transparency effects" is toggled.
-function refreshGlass() {
-  enableGlass(barHwnd);
-  if (panel && !panel.isDestroyed() && panelHwnd) setBackdrop(panelHwnd, glassMode);
-  layoutBar();
+
+function createSurfaceWindow(options) {
+  if (!isWin) return new BrowserWindow(options);
+  const backdrop = new BrowserWindow({
+    frame: false, transparent: true, resizable: false, focusable: false, skipTaskbar: true, show: false, hasShadow: false,
+  });
+  backdrop.setIgnoreMouseEvents(true);
+  backdrop.setAlwaysOnTop(true, 'screen-saver');
+  const hwnd = win32.hwndFromBuffer(backdrop.getNativeWindowHandle());
+  applyBackdrop(hwnd, glassMode);
+  // The native blur is clipped inside the CSS rim; the visible edge and shadow are never region-clipped.
+  const win = new BrowserWindow({ ...options, parent: backdrop });
+  backdrops.set(win, { window: backdrop, hwnd, surface: null });
+  win.on('show', () => syncBackdrop(win));
+  win.on('hide', () => backdrop.hide());
+  win.once('closed', () => { if (!backdrop.isDestroyed()) backdrop.destroy(); });
+  return win;
 }
-// Windows applies a resize lazily, so callers pass the size they just set instead of reading it back.
-function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
-  if (!isWin || !hwnd) return;
-  const { width, height } = size;
-  const k = screen.getDisplayMatching(win.getBounds()).scaleFactor;
-  const px = (v) => Math.round(v * k);
-  // Opaque windows drop the clip so a resized window is never cut to an old shape.
-  const region = glassMode === 'off' ? null
-    : { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) + 1 };
-  try { win32.setRoundRegion(hwnd, region); } catch (e) { console.error('region', e); }
+
+function syncBackdrop(win) {
+  const backdrop = backdrops.get(win);
+  if (!backdrop) return;
+  const { window, hwnd, surface } = backdrop;
+  if (glassMode === 'off' || !surface || !win.isVisible()) { window.hide(); return; }
+  const bounds = win.getBounds();
+  const { x, y, width, height, radius } = surface;
+  const inside = padBounds({ x: bounds.x + x, y: bounds.y + y, width, height }, -1);
+  const { scaleFactor } = screen.getDisplayMatching(bounds);
+  const px = (v) => Math.round(v * scaleFactor);
+  window.setBounds(inside);
+  try {
+    win32.setRoundRegion(hwnd, { width: px(inside.width), height: px(inside.height), radius: px(radius - 1) });
+  } catch (e) {
+    console.error('region', e);
+    window.hide();
+    return;
+  }
+  if (!window.isVisible()) window.showInactive();
+}
+
+function registerSurfaceIpc() {
+  ipcMain.on('surface:bounds', (e, surface) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const backdrop = backdrops.get(win);
+    if (!backdrop || !surface) return;
+    const { x, y, width, height, radius } = surface;
+    if (![x, y, width, height, radius].every(Number.isFinite) || width <= 2 || height <= 2 || radius < 1) return;
+    backdrop.surface = { x, y, width, height, radius };
+    syncBackdrop(win);
+  });
+  ipcMain.on('surface:mouse', (e, overPadding) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (backdrops.has(win)) win.setIgnoreMouseEvents(overPadding === true, { forward: true });
+  });
 }
 
 // ---------------- Windows taskbar ----------------
@@ -389,8 +435,8 @@ const ICON = path.join(RENDERER, 'assets', 'icon.png');
 const webPreferences = { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false };
 
 function createBar() {
-  bar = new BrowserWindow({
-    ...barBounds(), frame: false, transparent: true, resizable: false, movable: false, minimizable: false,
+  bar = createSurfaceWindow({
+    ...padBounds(barBounds(), barShadowPadding()), frame: false, transparent: true, resizable: false, movable: false, minimizable: false,
     maximizable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false, hasShadow: false, show: false,
     title: 'OpenBar', icon: ICON, webPreferences,
   });
@@ -400,49 +446,44 @@ function createBar() {
   });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); nativeTheme.on('updated', refreshGlass); }
+  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); refreshGlass(); nativeTheme.on('updated', refreshGlass); }
   bar.on('closed', () => { bar = null; });
 }
 
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 PANEL_SIZES.bluetooth = [330, 294];
-const DEVIN_PANEL_RADIUS = 28;
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
   const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
-  const radius = widget === 'devin' ? DEVIN_PANEL_RADIUS : PANEL_RADIUS;
-  const bb = bar.getBounds();
-  const d = screen.getDisplayMatching(bb).workArea;
+  const viewport = bar.getBounds();
+  const bb = padBounds(viewport, -barShadowPadding());
   const db = screen.getDisplayMatching(bb).bounds;
   const atTop = S().position === 'top';
   const room = atTop ? db.y + db.height - (bb.y + bb.height) : bb.y - db.y;
   const h = Math.min(preferredH, room - 14);
-  let x = Math.round(bb.x + (anchorX || bb.width / 2) - w / 2);
+  let x = Math.round(viewport.x + (anchorX || viewport.width / 2) - w / 2);
   x = Math.max(db.x + 8, Math.min(x, db.x + db.width - w - 8));
   const gap = widget === 'devin' ? 6 - S().margin : 6;
   const y = atTop ? bb.y + bb.height + gap : bb.y - h - gap;
+  const bounds = padBounds({ x, y, width: w, height: h }, SHADOW_PADDING);
   devinPanelSize = widget === 'devin' ? { maxHeight: h, atTop } : null;
   if (!panel || panel.isDestroyed()) {
-    panel = new BrowserWindow({
-      x, y, width: w, height: h, frame: false, transparent: true, resizable: false, skipTaskbar: true, alwaysOnTop: true,
+    panel = createSurfaceWindow({
+      ...bounds, frame: false, transparent: true, resizable: false, skipTaskbar: true, alwaysOnTop: true,
       show: false, hasShadow: false, title: 'OpenBar panel', icon: ICON, webPreferences,
     });
     panel.setAlwaysOnTop(true, 'screen-saver');
     panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
-    panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
-    if (panelHwnd) setBackdrop(panelHwnd, glassMode);
-    clipGlass(panel, panelHwnd, 0, radius, { width: w, height: h });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
-    panel.setBounds({ x, y, width: w, height: h });
-    clipGlass(panel, panelHwnd, 0, radius, { width: w, height: h });
+    panel.setBounds(bounds);
+    syncBackdrop(panel);
     panel.webContents.send('panel:widget', widget);
     panel.show(); panel.focus();
   }
-  void d;
   panelWidget = widget;
   broadcast('panel', widget);
 }
@@ -451,11 +492,11 @@ function fitDevinPanel(e, contentHeight) {
   if (panelWidget !== 'devin' || !devinPanelSize || !panel || panel.isDestroyed() ||
       e.sender !== panel.webContents || !Number.isFinite(contentHeight) || contentHeight <= 0) return;
   const bounds = panel.getBounds();
-  const height = Math.min(Math.ceil(contentHeight), devinPanelSize.maxHeight);
+  const height = Math.min(Math.ceil(contentHeight), devinPanelSize.maxHeight) + 2 * SHADOW_PADDING;
   if (height === bounds.height) return;
   const y = devinPanelSize.atTop ? bounds.y : bounds.y + bounds.height - height;
   panel.setBounds({ ...bounds, y, height });
-  clipGlass(panel, panelHwnd, 0, DEVIN_PANEL_RADIUS, { width: bounds.width, height });
+  syncBackdrop(panel);
 }
 
 function openSettings(tab) {
@@ -706,6 +747,7 @@ app.whenReady().then(() => {
   }
   if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
   registerIpc();
+  if (isWin) registerSurfaceIpc();
   createBar();
   createTray();
   applyTaskbar();
