@@ -12,8 +12,8 @@ async function iconFor(file) {
   const files = [file];
   if (/\.lnk$/i.test(file)) {
     try {
-      const { target } = shell.readShortcutLink(file);
-      if (target && target !== file) files.unshift(target);
+      const { target, icon } = shell.readShortcutLink(file);
+      if (!icon && target && target !== file) files.unshift(target);
     } catch (_) { /* use the shortcut icon */ }
   }
   let url = '';

@@ -13,7 +13,10 @@ test('launcher shortcut icons prefer the app icon and fall back to the shortcut'
     },
   };
   const shell = {
-    readShortcutLink: (file) => ({ target: file === 'Notepad.lnk' ? 'notepad.exe' : 'missing.exe' }),
+    readShortcutLink: (file) => ({
+      target: { 'Notepad.lnk': 'notepad.exe', 'Web App.lnk': 'chrome_proxy.exe' }[file] || 'missing.exe',
+      icon: file === 'Web App.lnk' ? 'web-app.ico' : '',
+    }),
   };
   const context = vm.createContext({
     module: {},
@@ -22,6 +25,7 @@ test('launcher shortcut icons prefer the app icon and fall back to the shortcut'
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'startmenu.js'), 'utf8'), context);
   const { iconFor } = context.module.exports;
   assert.equal(await iconFor('Notepad.lnk'), 'notepad.exe');
+  assert.equal(await iconFor('Web App.lnk'), 'Web App.lnk');
   assert.equal(await iconFor('Missing.lnk'), 'Missing.lnk');
   assert.equal(await iconFor('Example.url'), 'Example.url');
 });
