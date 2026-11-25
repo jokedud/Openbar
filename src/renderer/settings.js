@@ -110,13 +110,13 @@ T.apps = (m) => {
   m.append(list, h('h2', {}, 'Add from Start Menu'));
   const q = h('input', { type: 'text', value: appQuery, placeholder: 'Search installed apps…', style: { width: '320px' } });
   const res = h('div', { class: 'results' });
-  const pinnedSet = new Set(pinned.map((p) => (p.target || p.path || '').toLowerCase()));
+  const pinnedSet = new Set(pinned.map((p) => (p.path || '').toLowerCase()));
   let apps = [];
   const show = () => {
     appQuery = q.value;
     const t = q.value.trim().toLowerCase();
     res.replaceChildren(...apps.filter((a) => !t || a.name.toLowerCase().includes(t)).slice(0, 40).map((a) => {
-      const already = pinnedSet.has((a.target || a.path || '').toLowerCase());
+      const already = pinnedSet.has((a.path || '').toLowerCase());
       return h('div', { class: 'li' }, h('span', { class: 'grow' }, a.name),
         already
           ? h('button', { class: 'btn', disabled: true, style: { opacity: '.5' } }, 'Pinned')
