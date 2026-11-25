@@ -282,7 +282,14 @@ const devinErrors = {
   unavailable: 'Devin sessions are unavailable right now. Try again in a moment.',
 };
 
+let devinChatOpen = false;
+function switchDevinView(open) {
+  devinChatOpen = open;
+  draw('switch').then(() => { if (widget === 'devin') animateIn(); });
+}
+
 P.devin = (body) => {
+  if (devinChatOpen) return mountDevinChat(body, () => switchDevinView(false));
   const list = h('div', { class: 'devin-list' });
   const message = h('div', { class: 'devin-message muted', role: 'status' });
   const more = h('button', { class: 'btn', hidden: true }, 'Load more');
@@ -333,7 +340,8 @@ P.devin = (body) => {
     if (!sessions.size && more.hidden) message.append(empty('No Devin sessions found.'));
   };
   more.onclick = () => load(true);
-  setHead('Devin sessions', actionBtn('refresh', 'Refresh', () => load()), settingsBtn('devin'));
+  setHead('Devin sessions', h('button', { class: 'btn', onclick: () => switchDevinView(true) }, icon('plus', 12), 'Chat'),
+    actionBtn('refresh', 'Refresh', () => load()), settingsBtn('devin'));
   body.append(h('div', { class: 'devin-content' },
     h('div', { class: 'devin-label' }, icon('devin', 14), 'LOCAL & CLOUD SESSIONS'), list, message, more));
   load();
