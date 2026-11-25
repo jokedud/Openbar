@@ -22,7 +22,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   try {
     if (method === 'initialize') {
       assert.equal(params.protocolVersion, 1);
-      write({ id, result: { protocolVersion: 1, mcpCapabilities: { http: true } } });
+      write({ id, result: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true, sse: true } } } });
     } else if (method === 'session/new') {
       [server] = params.mcpServers;
       assert.equal(server.name, 'openbar-desktop');

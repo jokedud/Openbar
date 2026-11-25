@@ -153,7 +153,7 @@ class DevinChat {
         });
         this.acp = acp;
         const init = await acp.request('initialize', { protocolVersion: 1, clientCapabilities: {} });
-        if (!init?.mcpCapabilities?.http || init.protocolVersion !== 1) throw new Error('Unsupported ACP version');
+        if (!init?.agentCapabilities?.mcpCapabilities?.http || init.protocolVersion !== 1) throw new Error('Unsupported ACP version');
         const session = await acp.request('session/new', { cwd: this.cwd, mcpServers: [desktop.config] });
         if (typeof session?.sessionId !== 'string' || !session.sessionId) throw new Error('No ACP session');
         this.sessionId = session.sessionId;
