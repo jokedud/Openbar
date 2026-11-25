@@ -351,10 +351,12 @@ const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 4
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; return; }
-  const [w, h] = PANEL_SIZES[widget] || [360, 420];
+  const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
   const bb = bar.getBounds();
   const d = screen.getDisplayMatching(bb).workArea;
   const db = screen.getDisplayMatching(bb).bounds;
+  const room = S().position === 'top' ? db.y + db.height - (bb.y + bb.height) : bb.y - db.y;
+  const h = Math.min(preferredH, room - 14);
   let x = Math.round(bb.x + (anchorX || bb.width / 2) - w / 2);
   x = Math.max(db.x + 8, Math.min(x, db.x + db.width - w - 8));
   const gap = 6;
