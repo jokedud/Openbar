@@ -30,28 +30,83 @@ function applyTheme() {
   document.documentElement.style.setProperty('--bar-m', (s.margin != null ? s.margin : 6) + 'px');
 }
 
+const SURFACE_HIT_SLOP = 4;
+const SURFACE_PADDING_DELAY_MS = 40;
+
 function observeSurface(surface) {
   if (OB.platform !== 'win32') return;
-  const reportBounds = () => api.send('surface:bounds', {
-    x: surface.offsetLeft, y: surface.offsetTop,
-    width: surface.offsetWidth, height: surface.offsetHeight,
-    radius: parseFloat(getComputedStyle(surface).borderTopLeftRadius),
-  });
+  let boundsRaf = 0;
+  let lastBounds = null;
+  const sendBounds = () => {
+    boundsRaf = 0;
+    const next = {
+      x: surface.offsetLeft, y: surface.offsetTop,
+      width: surface.offsetWidth, height: surface.offsetHeight,
+      radius: parseFloat(getComputedStyle(surface).borderTopLeftRadius),
+    };
+    if (lastBounds && lastBounds.x === next.x && lastBounds.y === next.y &&
+        lastBounds.width === next.width && lastBounds.height === next.height &&
+        lastBounds.radius === next.radius) return;
+    lastBounds = next;
+    api.send('surface:bounds', next);
+  };
+  const reportBounds = () => {
+    if (typeof requestAnimationFrame === 'function') {
+      if (!boundsRaf) boundsRaf = requestAnimationFrame(sendBounds);
+    } else {
+      sendBounds();
+    }
+  };
   const resize = new ResizeObserver(reportBounds);
   resize.observe(surface);
   resize.observe(document.body);
   new MutationObserver(reportBounds).observe(surface, { attributes: true, attributeFilter: ['data-widget'] });
 
   let overPadding = false;
+  let paddingTimer = null;
+  function cancelPaddingTimer() {
+    if (paddingTimer !== null) { clearTimeout(paddingTimer); paddingTimer = null; }
+  }
   function setOverPadding(next) {
+    if (!next) cancelPaddingTimer();
     if (overPadding === next) return;
     overPadding = next;
     api.send('surface:mouse', overPadding);
   }
+  function scheduleOverPadding() {
+    if (overPadding || paddingTimer !== null) return;
+    paddingTimer = setTimeout(() => {
+      paddingTimer = null;
+      setOverPadding(true);
+    }, SURFACE_PADDING_DELAY_MS);
+  }
+  function nearSurface(e) {
+    if (typeof surface.getBoundingClientRect !== 'function' ||
+        !Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return false;
+    const r = surface.getBoundingClientRect();
+    if (e.clientX < r.left - SURFACE_HIT_SLOP || e.clientX > r.right + SURFACE_HIT_SLOP ||
+        e.clientY < r.top - SURFACE_HIT_SLOP || e.clientY > r.bottom + SURFACE_HIT_SLOP) return false;
+    const rad = Math.min(parseFloat(getComputedStyle(surface).borderTopLeftRadius) || 0, (r.right - r.left) / 2, (r.bottom - r.top) / 2);
+    if (rad <= 0) return true;
+    const cx = Math.max(r.left + rad, Math.min(e.clientX, r.right - rad));
+    const cy = Math.max(r.top + rad, Math.min(e.clientY, r.bottom - rad));
+    return Math.hypot(e.clientX - cx, e.clientY - cy) <= rad + SURFACE_HIT_SLOP;
+  }
   function checkMouse(e) {
-    if (e.buttons || e.sourceCapabilities?.firesTouchEvents) return;
+    if (e.buttons || e.sourceCapabilities?.firesTouchEvents) {
+      cancelPaddingTimer();
+      return;
+    }
+    if (nearSurface(e)) {
+      setOverPadding(false);
+      return;
+    }
     const hit = document.elementFromPoint(e.clientX, e.clientY);
-    setOverPadding(hit !== null && !surface.contains(hit));
+    if (hit === null || surface.contains(hit)) {
+      setOverPadding(false);
+    } else {
+      scheduleOverPadding();
+    }
   }
   document.addEventListener('mousemove', checkMouse);
   document.addEventListener('mouseup', checkMouse);

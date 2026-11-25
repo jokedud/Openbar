@@ -169,6 +169,82 @@ function cmdWidget(id) {
 // ---------------- render ----------------
 let openPanel = null;
 const cache = new Map();
+function childKey(node) {
+  if (!node || node.nodeType !== 1 || !node.dataset) return null;
+  if (node.dataset.pin != null) return `pin:${node.dataset.pin}`;
+  if (node.dataset.hwnds) return `hwnd:${node.dataset.hwnds.split(',')[0]}`;
+  return null;
+}
+function reconcileNodes(parent, want) {
+  const keep = new Set(want);
+  for (const child of [...parent.childNodes]) {
+    if (!keep.has(child)) parent.removeChild(child);
+  }
+  for (let i = 0; i < want.length; i++) {
+    if (parent.childNodes[i] !== want[i]) parent.insertBefore(want[i], parent.childNodes[i] || null);
+  }
+}
+function patchNode(prev, next) {
+  if (!prev || typeof prev.nodeType !== 'number' || typeof next.nodeType !== 'number') {
+    return prev && prev.outerHTML === next.outerHTML ? prev : next;
+  }
+  if (prev.nodeType !== next.nodeType) return next;
+  if (prev.nodeType === 3) {
+    if (prev.nodeValue !== next.nodeValue) prev.nodeValue = next.nodeValue;
+    return prev;
+  }
+  if (prev.nodeType !== 1 || prev.tagName !== next.tagName || prev.namespaceURI !== next.namespaceURI) return next;
+  if (prev.outerHTML === next.outerHTML) return prev;
+  for (const attr of [...prev.attributes]) {
+    if (!next.hasAttribute(attr.name)) prev.removeAttribute(attr.name);
+  }
+  for (const attr of next.attributes) {
+    if (prev.getAttribute(attr.name) !== attr.value) prev.setAttribute(attr.name, attr.value);
+  }
+  const nextKids = [...next.childNodes];
+  const hasKeys = nextKids.some((k) => childKey(k) !== null);
+  if (hasKeys) {
+    const keyed = new Map();
+    const unkeyed = [];
+    for (const c of prev.childNodes) {
+      const k = childKey(c);
+      if (k !== null && !keyed.has(k)) keyed.set(k, c);
+      else unkeyed.push(c);
+    }
+    let ui = 0;
+    const want = nextKids.map((nk) => {
+      const k = childKey(nk);
+      const match = k !== null ? keyed.get(k) : unkeyed[ui++];
+      return match ? patchNode(match, nk) : nk;
+    });
+    reconcileNodes(prev, want);
+    return prev;
+  }
+  for (let i = 0; i < nextKids.length; i++) {
+    const cur = prev.childNodes[i];
+    if (!cur) prev.appendChild(nextKids[i]);
+    else {
+      const patched = patchNode(cur, nextKids[i]);
+      if (patched !== cur) prev.replaceChild(patched, cur);
+    }
+  }
+  while (prev.childNodes.length > nextKids.length) prev.removeChild(prev.lastChild);
+  return prev;
+}
+function reconcileChildren(el, want) {
+  if (typeof el.insertBefore !== 'function') {
+    const cur = [...el.children];
+    if (cur.length !== want.length || cur.some((c, i) => c !== want[i])) el.replaceChildren(...want);
+    return;
+  }
+  const keep = new Set(want);
+  for (const child of [...el.children]) {
+    if (!keep.has(child)) el.removeChild(child);
+  }
+  for (let i = 0; i < want.length; i++) {
+    if (el.children[i] !== want[i]) el.insertBefore(want[i], el.children[i] || null);
+  }
+}
 function renderZone(zone, names) {
   if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
@@ -186,13 +262,12 @@ function renderZone(zone, names) {
     if (name) node.dataset.w = name;
     const key = typeof item === 'string' ? `${name}:${i}` : item.id;
     const prev = nodes.get(key);
-    if (prev && prev.outerHTML === node.outerHTML) node = prev;
+    if (prev) node = patchNode(prev, node);
     next.set(key, node);
     want.push(node);
   }
   cache.set(zone, next);
-  const cur = [...el.children];
-  if (cur.length !== want.length || cur.some((c, i) => c !== want[i])) el.replaceChildren(...want);
+  reconcileChildren(el, want);
 }
 function pillWidth(bar) {
   const cs = getComputedStyle(bar);
@@ -208,12 +283,18 @@ function pillWidth(bar) {
   }
   return Math.ceil(w + 2);
 }
+let lastSentWidth = 0;
 function render() {
   if (dragFrom != null) return;
   const s = OB.settings;
   renderZone('left', s.left); renderZone('center', s.center); renderZone('right', s.right);
   const bar = document.getElementById('bar');
-  if (s.layout === 'pill') api.invoke('bar:width', pillWidth(bar));
+  if (s.layout === 'pill') {
+    const w = pillWidth(bar);
+    if (w !== lastSentWidth) { lastSentWidth = w; api.invoke('bar:width', w); }
+  } else {
+    lastSentWidth = 0;
+  }
 }
 let raf = 0;
 function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }

@@ -152,9 +152,17 @@ function createSurfaceWindow(options) {
   applyBackdrop(hwnd, glassMode);
   // The native blur is clipped inside the CSS rim; the visible edge and shadow are never region-clipped.
   const win = new BrowserWindow({ ...options, parent: backdrop });
-  backdrops.set(win, { window: backdrop, hwnd, surface: null });
+  const entry = { window: backdrop, hwnd, surface: null, lastSync: null, ignoringMouse: false };
+  backdrops.set(win, entry);
   win.on('show', () => syncBackdrop(win));
-  win.on('hide', () => backdrop.hide());
+  win.on('hide', () => {
+    entry.lastSync = null;
+    if (entry.ignoringMouse) {
+      entry.ignoringMouse = false;
+      if (!win.isDestroyed()) win.setIgnoreMouseEvents(false);
+    }
+    if (!backdrop.isDestroyed()) backdrop.hide();
+  });
   win.once('closed', () => { if (!backdrop.isDestroyed()) backdrop.destroy(); });
   return win;
 }
@@ -163,20 +171,32 @@ function syncBackdrop(win) {
   const backdrop = backdrops.get(win);
   if (!backdrop) return;
   const { window, hwnd, surface } = backdrop;
-  if (glassMode === 'off' || !surface || !win.isVisible()) { window.hide(); return; }
+  if (glassMode === 'off' || !surface || !win.isVisible()) {
+    backdrop.lastSync = null;
+    if (window.isVisible()) window.hide();
+    return;
+  }
   const bounds = win.getBounds();
   const { x, y, width, height, radius } = surface;
   const inside = padBounds({ x: bounds.x + x, y: bounds.y + y, width, height }, -1);
   const { scaleFactor } = screen.getDisplayMatching(bounds);
   const px = (v) => Math.round(v * scaleFactor);
-  window.setBounds(inside);
-  try {
-    win32.setRoundRegion(hwnd, { width: px(inside.width), height: px(inside.height), radius: px(radius - 1) });
-  } catch (e) {
-    console.error('region', e);
-    window.hide();
-    return;
+  const region = { width: px(inside.width), height: px(inside.height), radius: px(radius - 1) };
+  const prev = backdrop.lastSync;
+  const boundsChanged = !prev || prev.x !== inside.x || prev.y !== inside.y || prev.width !== inside.width || prev.height !== inside.height;
+  const regionChanged = !prev || prev.rw !== region.width || prev.rh !== region.height || prev.rr !== region.radius;
+  if (boundsChanged) window.setBounds(inside);
+  if (regionChanged) {
+    try {
+      win32.setRoundRegion(hwnd, region);
+    } catch (e) {
+      console.error('region', e);
+      backdrop.lastSync = null;
+      window.hide();
+      return;
+    }
   }
+  backdrop.lastSync = { ...inside, rw: region.width, rh: region.height, rr: region.radius };
   if (!window.isVisible()) window.showInactive();
 }
 
@@ -192,7 +212,13 @@ function registerSurfaceIpc() {
   });
   ipcMain.on('surface:mouse', (e, overPadding) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    if (backdrops.has(win)) win.setIgnoreMouseEvents(overPadding === true, { forward: true });
+    const backdrop = backdrops.get(win);
+    if (!backdrop) return;
+    const ignore = overPadding === true;
+    if (backdrop.ignoringMouse === ignore) return;
+    backdrop.ignoringMouse = ignore;
+    if (ignore) win.setIgnoreMouseEvents(true, { forward: true });
+    else win.setIgnoreMouseEvents(false);
   });
 }
 
