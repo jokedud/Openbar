@@ -114,6 +114,15 @@ W.media = () => {
     h('button', { class: 'w', 'data-media': 'playpause', title: m.playing ? 'Pause' : 'Play' }, icon(m.playing ? 'pause' : 'play', 14)),
     h('button', { class: 'w', 'data-media': 'next', title: 'Next' }, icon('next', 14)));
 };
+W.volume = () => {
+  const audio = OB.state.volume;
+  const ready = audio?.status === 'ready';
+  const button = panelBtn('volume', '', icon(ready && !audio.muted && audio.volume ? 'speaker' : 'speaker-off', 16),
+    ready ? h('span', { class: 'val' }, audio.muted ? 'Muted' : audio.volume + '%') : null);
+  button.title = ready ? `Volume · ${audio.muted ? 'Muted' : audio.volume + '%'}`
+    : audio?.status === 'no-output' ? 'Volume · No audio output device' : 'Volume';
+  return button;
+};
 W.pomodoro = () => {
   const p = OB.data.pomodoro || {};
   if (p.phase === 'focus' || p.phase === 'break') return panelBtn('pomodoro', `pomo ${p.phase}`, icon('timer', 16), h('span', { class: 'val' }, fmt.mmss(p.endsAt - Date.now())));
