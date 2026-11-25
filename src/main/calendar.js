@@ -1,0 +1,50 @@
+'use strict';
+const ical = require('node-ical');
+
+// Fetches iCal feeds (Google / Outlook / iCloud secret links) and expands events for the next 30 days.
+async function fetchCalendar(cal) {
+  const url = cal.url.replace(/^webcal:\/\//i, 'https://');
+  const r = await fetch(url, { headers: { 'User-Agent': 'OpenBar/0.1' } });
+  if (!r.ok) throw new Error(`${cal.name || 'calendar'}: HTTP ${r.status}`);
+  const data = ical.sync.parseICS(await r.text());
+  const from = new Date(Date.now() - 24 * 3600e3);
+  const to = new Date(Date.now() + 30 * 24 * 3600e3);
+  const out = [];
+  for (const ev of Object.values(data)) {
+    if (!ev || ev.type !== 'VEVENT' || !ev.start) continue;
+    const dur = (ev.end ? +ev.end : +ev.start) - +ev.start;
+    const allDay = ev.datetype === 'date';
+    const push = (start) => out.push({
+      id: `${ev.uid}|${+start}`, title: String(ev.summary || '(no title)'), start: +start, end: +start + dur,
+      allDay, location: ev.location ? String(ev.location) : '', calendar: cal.name || '',
+      url: findMeetingUrl(ev),
+    });
+    if (ev.rrule) {
+      const excluded = new Set(Object.values(ev.exdate || {}).map((d) => +d));
+      for (const d of ev.rrule.between(from, to, true)) {
+        if (!excluded.has(+d)) push(d);
+      }
+    } else if (+ev.start <= +to && +ev.start + dur >= +from) {
+      push(ev.start);
+    }
+  }
+  return out;
+}
+
+function findMeetingUrl(ev) {
+  const hay = [ev.location, ev.description, ev.url && (ev.url.val || ev.url)].filter(Boolean).join(' ');
+  const m = String(hay).match(/https:\/\/[^\s"<>]*(zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com)[^\s"<>]*/i);
+  return m ? m[0] : '';
+}
+
+async function fetchAll(calendars) {
+  const results = await Promise.allSettled(calendars.filter((c) => c.url).map(fetchCalendar));
+  const events = [], errors = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled') events.push(...r.value); else errors.push(String(r.reason && r.reason.message || r.reason));
+  }
+  events.sort((a, b) => a.start - b.start);
+  return { events, errors, fetchedAt: Date.now() };
+}
+
+module.exports = { fetchAll };
