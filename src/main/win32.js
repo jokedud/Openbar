@@ -44,6 +44,7 @@ const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow(
 const GetWindowRect = user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)');
 const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(intptr_t hWnd)');
 const ShowWindow = user32.func('bool __stdcall ShowWindow(intptr_t hWnd, int cmd)');
+const ShowWindowAsync = user32.func('bool __stdcall ShowWindowAsync(intptr_t hWnd, int cmd)');
 const FindWindowW = user32.func('intptr_t __stdcall FindWindowW(const char16_t *cls, const char16_t *name)');
 const FindWindowExW = user32.func('intptr_t __stdcall FindWindowExW(intptr_t parent, intptr_t after, const char16_t *cls, const char16_t *name)');
 const GetClassNameW = user32.func('int __stdcall GetClassNameW(intptr_t hWnd, _Out_ uint8_t *buf, int max)');
@@ -169,9 +170,9 @@ function focusWindow(hwnd) {
   return SetForegroundWindow(hwnd);
 }
 
-function minimizeWindow(hwnd) { return ShowWindow(hwnd, SW_MINIMIZE); }
-function maximizeWindow(hwnd) { return ShowWindow(hwnd, SW_MAXIMIZE); }
-function restoreWindow(hwnd) { return ShowWindow(hwnd, SW_RESTORE); }
+function minimizeWindow(hwnd) { return ShowWindowAsync(hwnd, SW_MINIMIZE); }
+function maximizeWindow(hwnd) { return ShowWindowAsync(hwnd, SW_MAXIMIZE); }
+function restoreWindow(hwnd) { return ShowWindowAsync(hwnd, SW_RESTORE); }
 function isWindowMaximized(hwnd) { return typeof IsZoomed === 'function' ? IsZoomed(hwnd) : false; }
 function closeWindow(hwnd) { return PostMessageW(hwnd, WM_CLOSE, 0, 0); }
 
