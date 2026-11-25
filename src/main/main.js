@@ -139,6 +139,7 @@ async function pollWindows() {
     trimmed[day] = today;
     dataStore.value.screenTime = trimmed;
     dataStore.save();
+    if (now - (pollWindows.stSent || 0) > 30000) { pollWindows.stSent = now; broadcast('data', D()); }
   }
   const sig = JSON.stringify(list.map((w) => [w.hwnd, w.title, w.minimized])) + active;
   if (sig !== pollWindows.sig) {
