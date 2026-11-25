@@ -34,17 +34,17 @@ const SURFACE_HIT_SLOP = 4;
 const SURFACE_PADDING_DELAY_MS = 40;
 
 function observeSurface(surface) {
-  if (OB.platform !== 'win32') return;
+  if (OB.platform !== 'win32') return { syncBounds() {} };
   let boundsRaf = 0;
   let lastBounds = null;
-  const sendBounds = () => {
+  const sendBounds = (force = false) => {
     boundsRaf = 0;
     const next = {
       x: surface.offsetLeft, y: surface.offsetTop,
       width: surface.offsetWidth, height: surface.offsetHeight,
       radius: parseFloat(getComputedStyle(surface).borderTopLeftRadius),
     };
-    if (lastBounds && lastBounds.x === next.x && lastBounds.y === next.y &&
+    if (force !== true && lastBounds && lastBounds.x === next.x && lastBounds.y === next.y &&
         lastBounds.width === next.width && lastBounds.height === next.height &&
         lastBounds.radius === next.radius) return;
     lastBounds = next;
@@ -113,6 +113,7 @@ function observeSurface(surface) {
   document.addEventListener('dragend', checkMouse);
   document.documentElement.addEventListener('mouseleave', (e) => { if (!e.buttons) setOverPadding(false); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) setOverPadding(false); });
+  return { syncBounds: () => sendBounds(true) };
 }
 
 // ---------- DOM ----------
@@ -122,7 +123,12 @@ function h(tag, attrs, ...kids) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v;
     else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k.startsWith('on')) {
+      const ev = k.slice(2).toLowerCase();
+      if (!el._obOn) el._obOn = Object.create(null);
+      if (!el._obOn[ev]) el.addEventListener(ev, (e) => el._obOn[ev]?.(e));
+      el._obOn[ev] = v;
+    }
     else if (k === 'html') el.innerHTML = v;
     else el.setAttribute(k, v === true ? '' : v);
   }
