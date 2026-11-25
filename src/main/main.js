@@ -133,12 +133,12 @@ function applyTaskbar() {
     if (original?.guarded && pending?.id === original.id) restoreTaskbar();
     return;
   }
+  // Journal intent before touching Explorer or replacing a legacy baseline.
+  if (!taskbarRecovery.recordOverride(baseline)) return;
   if (pending?.phase === 'prepared') {
     dataStore.set({ taskbarRestore: { autohide: baseline, guarded: true, id: taskbarRecovery.id } });
     dataStore.save(true);
   }
-  // Journal intent before touching Explorer; a crash during the Win32 calls still needs recovery.
-  if (!taskbarRecovery.recordOverride(baseline)) return;
   if (!autohide) win32.setTaskbarAutoHide(true);
   if (win32.setTaskbarVisible(visible) && (win32.getTaskbarState() & win32.ABS_AUTOHIDE)) {
     taskbarRecovery.markApplied();
