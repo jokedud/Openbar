@@ -15,7 +15,7 @@ if (process.versions.electron) {
 
   test('dock and custom tabs compact apps, expose hidden windows and restore labels when they fit', async () => {
     const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
-    const { wide, narrow, tab, restored, width, groups, actions, tightTab } = JSON.parse(stdout);
+    const { wide, narrow, tab, restored, width, groups, actions, tightTab, fullCenter } = JSON.parse(stdout);
     assert.equal(wide.more, false);
     assert.equal(wide.labels, true);
     assert.ok(wide.firstTile > narrow.firstTile);
@@ -33,6 +33,7 @@ if (process.versions.electron) {
     assert.equal(groups.icons, groups.titles.length);
     assert.deepEqual(actions, ['close', [10, 'focus'], 'close'], 'selection closes before focus, and Escape closes');
     assert.equal(tightTab.moreVisible, true, `Overflow button must fit in the selected tab: ${JSON.stringify(tightTab)}`);
+    assert.equal(fullCenter.moreVisible, true, `Centered overflow button must fit in the full bar: ${JSON.stringify(fullCenter)}`);
   });
 }
 
@@ -116,5 +117,16 @@ async function measureDock() {
     const tile = more.getBoundingClientRect(), zone = left.getBoundingClientRect();
     return { zoneWidth: left.clientWidth, moreVisible: !more.hidden && tile.width > 0 && tile.right <= zone.right + 1 };
   })()`);
-  return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth, groups, actions, tightTab };
+  const fullCenter = await win.webContents.executeJavaScript(`(async () => {
+    Object.assign(OB.settings, { layout: 'full', customTabs: [], left: [], center: ['apps'], right: [] });
+    applyTheme();
+    render();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const center = document.getElementById('center');
+    const more = center.querySelector('.app-more');
+    const tile = more.getBoundingClientRect(), bar = document.getElementById('bar').getBoundingClientRect();
+    return { zoneWidth: center.clientWidth, barWidth: bar.width,
+      moreVisible: !more.hidden && tile.width > 0 && tile.left >= bar.left && tile.right <= bar.right };
+  })()`);
+  return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth, groups, actions, tightTab, fullCenter };
 }
