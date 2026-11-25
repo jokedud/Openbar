@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
   devinOtter: true,
   left: ['start', 'apps'],
   center: [],
-  right: ['media', 'weather', 'system', 'network', 'battery', 'pomodoro', 'todos', 'nextEvent', 'devin', 'clock', 'quick'],
+  right: ['media', 'weather', 'system', 'network', 'battery', 'brightness', 'pomodoro', 'todos', 'nextEvent', 'devin', 'clock', 'quick', 'bluetooth'],
   customTabs: [],
   pinned: [],                  // [{ name, path, args }]
   weather: { city: '', lat: null, lon: null, units: 'celsius' },

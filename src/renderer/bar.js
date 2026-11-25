@@ -22,6 +22,10 @@ function panelBtn(name, cls, ...kids) {
 const TITLES = { start: 'Launcher (search apps)', weather: 'Weather', system: 'System', network: 'Network', battery: 'Battery', pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', nextEvent: 'Calendar', calendar: 'Calendar', clock: 'Clock & world clocks', media: 'Now playing', github: 'GitHub', devin: 'Devin sessions', crypto: 'Crypto', screenTime: 'Screen time', quick: 'Quick actions' };
 
 const W = {};
+TITLES.bluetooth = 'Bluetooth';
+W.bluetooth = () => panelBtn('bluetooth', '', icon('bluetooth', 16));
+TITLES.brightness = 'Brightness';
+W.brightness = () => panelBtn('brightness', '', icon('sun'));
 W.start = () => panelBtn('start', '', icon('grid', 18));
 W.sep = () => h('span', { class: 'sep' });
 W.search = () => h('button', { class: 'w', title: 'Windows search', 'data-sys': 'search' }, icon('search', 16));
@@ -95,7 +99,7 @@ W.system = () => {
 };
 W.network = () => {
   const n = OB.state.net;
-  return panelBtn('network', '', icon('wifi', 16), h('div', { class: 'stack network-rates' },
+  return panelBtn('network', '', icon('globe', 16), h('div', { class: 'stack network-rates' },
     n && h('span', { class: 'val' }, '↓ ' + fmt.rate(n.down)), n && h('span', { class: 'val' }, '↑ ' + fmt.rate(n.up))));
 };
 let battery = null;

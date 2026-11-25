@@ -1,0 +1,64 @@
+#panel[data-widget="brightness"] {
+  --brightness-shift: 14px;
+  --brightness-warm: #ffbd73;
+  background: radial-gradient(ellipse at 88% 21%, rgba(247,153,68,.22), transparent 66%), var(--panel-bg);
+}
+[data-position="top"] #panel[data-widget="brightness"] { --brightness-shift: -14px; }
+#panel[data-widget="brightness"].enter { animation: brightness-pop .38s cubic-bezier(.2,.75,.2,1) both; }
+@keyframes brightness-pop {
+  0% { opacity: 0; transform: translateY(var(--brightness-shift)) scale(.91,.82); }
+  70% { opacity: 1; transform: scale(1,1.012); }
+  100% { opacity: 1; transform: none; }
+}
+#panel[data-widget="brightness"] .head { padding: 14px 16px 10px; }
+#panel[data-widget="brightness"] .brightness-content { min-height: 100%; display: flex; flex-direction: column; gap: 8px; }
+#panel[data-widget="brightness"] .brightness-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 100px; padding: 10px 15px;
+  border-radius: 14px; background: linear-gradient(112deg, var(--card) 20%, rgba(249,165,87,.12));
+  box-shadow: inset 0 0 0 1px var(--card-line);
+}
+#panel[data-widget="brightness"] .brightness-label {
+  color: color-mix(in srgb, var(--fg) 75%, transparent); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+}
+#panel[data-widget="brightness"] .brightness-value { margin-top: 5px; font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
+#panel[data-widget="brightness"] [data-available="true"] .brightness-value { font-size: 32px; font-variant-numeric: tabular-nums; }
+#panel[data-widget="brightness"] .brightness-sun {
+  position: relative; isolation: isolate; flex: none; display: grid; place-items: center; height: 72px; width: 72px;
+  border-radius: 50%; color: color-mix(in srgb, var(--brightness-warm) 75%, var(--fg));
+  background: radial-gradient(circle, rgba(249,170,93,.20), rgba(249,170,93,.04) 70%);
+  box-shadow: inset 0 0 0 1px rgba(249,170,93,.27);
+}
+#panel[data-widget="brightness"] .brightness-sun::before {
+  content: ''; position: absolute; inset: 5px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, rgba(255,183,82,.7), transparent 73%);
+  opacity: calc(.12 + .75 * var(--brightness-level, 0)); transform: scale(calc(.78 + .22 * var(--brightness-level, 0)));
+  transition: opacity .3s ease-out, transform .3s ease-out;
+}
+#panel[data-widget="brightness"] .brightness-sun .ic {
+  transform: rotate(calc(24deg * var(--brightness-level, 0))) scale(calc(.87 + .21 * var(--brightness-level, 0)));
+  transition: transform .32s cubic-bezier(.2,.75,.2,1);
+}
+#panel[data-widget="brightness"].enter .brightness-sun { animation: brightness-sunrise .5s cubic-bezier(.2,.75,.2,1) both; }
+@keyframes brightness-sunrise { from { opacity: 0; transform: translateY(5px) rotate(-20deg) scale(.76); } }
+#panel[data-widget="brightness"] .brightness-controls { padding: 0 3px; height: 26px; }
+#panel[data-widget="brightness"] .brightness-controls input {
+  appearance: none; width: 100%; height: 26px; display: block; margin: 0; padding: 0; border: 0; background: none; cursor: pointer;
+}
+#panel[data-widget="brightness"] .brightness-controls input::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 99px; background: linear-gradient(to right, var(--brightness-warm) var(--brightness-track), var(--active) var(--brightness-track));
+}
+#panel[data-widget="brightness"] .brightness-controls input::-webkit-slider-thumb {
+  appearance: none; width: 16px; height: 16px; margin-top: -5px; border-radius: 50%; background: #fff0d9;
+  box-shadow: 0 0 0 1px #a36e42, 0 2px 5px rgba(0,0,0,.28);
+}
+#panel[data-widget="brightness"] :is(input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#panel[data-widget="brightness"] .brightness-status {
+  margin: 0 3px; color: color-mix(in srgb, var(--fg) 75%, transparent); font-size: 12px; line-height: 1.4;
+}
+#panel[data-widget="brightness"] .brightness-status:empty { display: none; }
+#panel[data-widget="brightness"] .brightness-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: auto; }
+#panel[data-widget="brightness"] .brightness-shortcuts .btn {
+  justify-content: center; min-height: 38px; padding: 6px 8px; font-size: 12px; background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--card-line); transition: background-color .16s ease-out;
+}
+#panel[data-widget="brightness"] .brightness-shortcuts .btn:hover { background: var(--active); }
