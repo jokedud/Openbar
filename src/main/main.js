@@ -477,7 +477,7 @@ function createBar() {
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [344, 326], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [356, 250], battery: [344, 326], quick: [320, 320], start: [520, 560] };
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 
@@ -744,6 +744,13 @@ function registerIpc() {
   ipcMain.handle('media', (_e, action) => isWin && sources.controlMedia(action));
   ipcMain.handle('system', (_e, action) => { const f = SYSTEM_ACTIONS[action]; if (f) f(); });
   ipcMain.handle('open', (_e, url) => { if (SAFE_URL.test(String(url))) shell.openExternal(String(url)); });
+  let wifi;
+  const networkControls = () => (wifi ||= require('./wifi').createWifiControls((url) => shell.openExternal(url)));
+  const fromNetworkPanel = (e) => isWin && panelWidget === 'network' && panel && !panel.isDestroyed() &&
+    e.sender === panel.webContents && e.senderFrame === panel.webContents.mainFrame;
+  ipcMain.handle('wifi:status', (e) => fromNetworkPanel(e) ? networkControls().status() : null);
+  ipcMain.handle('wifi:set-radio', (e, enabled) => fromNetworkPanel(e) && networkControls().setRadio(enabled));
+  ipcMain.handle('wifi:open', (e, target) => fromNetworkPanel(e) && networkControls().open(target));
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
   ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
