@@ -218,6 +218,7 @@ function mainIpc(initialConfig, storedToken = 'cog_test') {
   const { deepMerge, DEFAULT_SETTINGS } = requireStore();
   const store = (defaults, initial) => ({
     value: initial, get() { return this.value; }, save() {},
+    set(patch) { this.value = deepMerge(this.value, patch); },
     replace(patch) { this.value = deepMerge(defaults, patch); },
   });
   const settings = store(DEFAULT_SETTINGS, { ...DEFAULT_SETTINGS, layout: 'full' });
@@ -234,7 +235,10 @@ function mainIpc(initialConfig, storedToken = 'cog_test') {
   };
   const electron = { app, safeStorage, ipcMain: { handle: (name, handler) => handlers.set(name, handler) } };
   const context = vm.createContext({
-    require: (name) => ({ path, electron, './devin': require('../src/main/devin'), './store': { DEFAULT_SETTINGS } })[name] || {},
+    require: (name) => ({
+      path, electron, './bluetooth': require('../src/main/bluetooth'),
+      './devin': require('../src/main/devin'), './store': { DEFAULT_SETTINGS },
+    })[name] || {},
     __dirname, Buffer, settings, credentials, sender, process: { platform: 'test', on() {} },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8'), context);

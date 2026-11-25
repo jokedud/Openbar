@@ -10,6 +10,7 @@ const WIDGETS = {
   nextEvent: 'Next meeting', weather: 'Weather', system: 'CPU & RAM', network: 'Network speed', battery: 'Battery', media: 'Now playing',
   pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', github: 'GitHub activity', devin: 'Devin sessions', crypto: 'Crypto prices', screenTime: 'Screen time',
   quick: 'Quick actions', settings: 'Settings button',
+  bluetooth: 'Bluetooth',
 };
 let tab = new URLSearchParams(location.search).get('tab') || 'general';
 const $ = (id) => document.getElementById(id);

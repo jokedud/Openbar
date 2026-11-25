@@ -9,6 +9,7 @@ const sources = require('./sources');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
+const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -404,6 +405,7 @@ function createBar() {
 }
 
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+PANEL_SIZES.bluetooth = [330, 294];
 const DEVIN_PANEL_RADIUS = 28;
 
 function togglePanel(widget, anchorX) {
@@ -457,6 +459,7 @@ function fitDevinPanel(e, contentHeight) {
 }
 
 function openSettings(tab) {
+  if (panelWidget === 'bluetooth') { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
   settingsWin = new BrowserWindow({
@@ -600,14 +603,16 @@ function registerDevinIpc() {
 
 function registerIpc() {
   registerDevinIpc();
+  registerBluetoothIpc(ipcMain, shell, (e) => panelWidget === 'bluetooth' && e.sender === panel?.webContents);
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
-  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); applySettings(prev); return S(); });
+  ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); applySettings(prev); return S(); });
   ipcMain.handle('settings:reset', () => {
     const { configured, orgId } = devinConfigInfo();
     if ((configured || orgId) && saveDevinConfig({}).error) throw new Error('Could not remove the saved Devin key.');
     const prev = JSON.parse(JSON.stringify(S()));
     settingsStore.replace(DEFAULT_SETTINGS);
+    migrateBluetoothLayout();
     applySettings(prev);
     return S();
   });
@@ -680,12 +685,18 @@ function registerIpc() {
 const stoppers = [];
 app.on('second-instance', () => openSettings());
 
+function migrateBluetoothLayout() {
+  const patch = bluetoothLayoutMigration(S());
+  if (patch) settingsStore.set(patch);
+}
+
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
   devinStore = new JsonFile('devin.json', { encrypted: '', orgId: '' });
   if (isWin) taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
   const firstRun = !require('fs').existsSync(settingsStore.file);
+  migrateBluetoothLayout();
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
       { name: 'File Explorer', path: path.join(process.env.SystemRoot || 'C:/Windows', 'explorer.exe') },

@@ -3,7 +3,7 @@
 let widget = new URLSearchParams(location.search).get('widget');
 const $ = (id) => document.getElementById(id);
 const P = {};
-const stable = new Set(['start', 'todos', 'notes', 'devin']); // panels with local state: don't rebuild on every tick
+const stable = new Set(['start', 'todos', 'notes', 'devin', 'bluetooth']); // panels with local state: don't rebuild on every tick
 
 function setHead(title, ...actions) { $('title').textContent = title; $('actions').replaceChildren(...actions); }
 const actionBtn = (ic, title, onclick) => h('button', { class: 'btn icon', title, onclick }, icon(ic, 14));
@@ -343,6 +343,16 @@ P.devin = (body) => {
 
 // ---------- router ----------
 let devinSizeObserver;
+let stopBluetoothPanel;
+P.bluetooth = (body) => {
+  setHead('Bluetooth');
+  stopBluetoothPanel = mountBluetoothPanel(body);
+};
+function unmountBluetoothPanel() {
+  stopBluetoothPanel?.();
+  stopBluetoothPanel = null;
+}
+
 function animateIn() {
   const el = $('panel');
   devinSizeObserver?.disconnect();
@@ -371,7 +381,7 @@ function animateIn() {
   el.classList.add('enter');
 }
 async function draw(force) {
-  if (stable.has(widget) && (!force || (widget === 'devin' && force !== 'switch'))) return;
+  if (stable.has(widget) && (!force || (['devin', 'bluetooth'].includes(widget) && force !== 'switch'))) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
   const fn = P[widget];
@@ -381,9 +391,10 @@ async function draw(force) {
   $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
-  draw(widget === 'devin' ? 'switch' : true).then(animateIn);
+  draw(['devin', 'bluetooth'].includes(widget) ? 'switch' : true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
-  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
+  api.on('panel:widget', (w) => { unmountBluetoothPanel(); widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
+  api.on('panel', (w) => { if (w !== 'bluetooth') unmountBluetoothPanel(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
