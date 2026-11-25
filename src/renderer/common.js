@@ -6,7 +6,7 @@ const OB = { settings: null, data: null, state: {}, listeners: new Set() };
 OB.init = async function init() {
   const r = await api.invoke('init');
   OB.settings = r.settings; OB.data = r.data; OB.state = r.state; OB.platform = r.platform; OB.version = r.version;
-  api.on('state', (patch) => { Object.assign(OB.state, patch); OB.emit('state', patch); });
+  api.on('state', (patch) => { Object.assign(OB.state, patch); if ('glass' in patch) applyTheme(); OB.emit('state', patch); });
   api.on('settings', (s) => { OB.settings = s; applyTheme(); OB.emit('settings', s); });
   api.on('data', (d) => { OB.data = d; OB.emit('data', d); });
   applyTheme();
@@ -23,7 +23,9 @@ function applyTheme() {
   document.documentElement.dataset.style = s.style || 'glass';
   document.documentElement.dataset.position = s.position || 'bottom';
   document.documentElement.dataset.layout = s.layout || 'full';
+  document.documentElement.dataset.glass = OB.state.glass || 'off';
   document.documentElement.style.setProperty('--bar-h', (s.height || 46) + 'px');
+  document.documentElement.style.setProperty('--bar-r', Math.round((s.height || 46) * 0.3) + 'px');
   document.documentElement.style.setProperty('--bar-m', (s.margin || 6) + 'px');
 }
 
