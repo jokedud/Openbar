@@ -75,9 +75,16 @@ function layoutBar() {
 const barRadius = (height) => Math.round(height * 0.3);
 const PANEL_RADIUS = 18;
 let glassMode = 'off';
+function transparencyEnabled() {
+  try {
+    const key = require('path').win32.join('HKCU', 'Software', 'Microsoft', 'Windows', 'CurrentVersion', 'Themes', 'Personalize');
+    const out = require('child_process').execFileSync('reg', ['query', key, '/v', 'EnableTransparency'], { encoding: 'utf8', windowsHide: true });
+    return !/REG_DWORD\s+0x0\b/.test(out);
+  } catch { return true; }
+}
 function enableGlass(win, hwnd, mode) {
   if (!isWin || !hwnd) return;
-  try { glassMode = win32.setBackdrop(hwnd, mode); } catch (e) { glassMode = 'off'; console.error('backdrop', e); }
+  try { glassMode = win32.setBackdrop(hwnd, transparencyEnabled() ? mode : 'off'); } catch (e) { glassMode = 'off'; console.error('backdrop', e); }
   state.glass = glassMode;
   broadcast('state', { glass: glassMode });
 }
@@ -336,7 +343,7 @@ function createBar() {
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 480], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 420], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 420], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; return; }
