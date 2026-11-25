@@ -779,12 +779,15 @@ function rememberDevinDesktopTarget() {
   if (title) devinDesktopTarget = { hwnd, pid, title };
 }
 
-function devinChatVisible() {
-  return panelWidget === 'devin' && panel && !panel.isDestroyed() && panel.isVisible();
-}
+function devinChatPanel() { return panelWidget === 'devin' && panel && !panel.isDestroyed() ? panel : null; }
+function devinChatVisible() { return !!devinChatPanel()?.isVisible(); }
 
 function registerDevinChatIpc() {
-  const fromPanel = (e) => isWin && devinChatVisible() && e.sender === panel.webContents && e.senderFrame === panel.webContents.mainFrame;
+  const fromPanel = (e) => {
+    const contents = devinChatPanel()?.webContents;
+    return isWin && contents && e.sender === contents && e.senderFrame === contents.mainFrame;
+  };
+  const fromVisiblePanel = (e) => devinChatVisible() && fromPanel(e);
   const chat = () => (devinChat ||= new DevinChat({
     cwd: app.getPath('userData'),
     visible: devinChatVisible,
@@ -792,12 +795,12 @@ function registerDevinChatIpc() {
     emit: (state) => { if (devinChatVisible()) panel.webContents.send('devin:chat-update', state); },
   }));
   ipcMain.handle('devin:chat-status', (e) => fromPanel(e) ? chat().check() : null);
-  ipcMain.handle('devin:chat-send', (e, text) => { if (fromPanel(e)) void chat().send(text); });
+  ipcMain.handle('devin:chat-send', (e, text) => { if (fromVisiblePanel(e)) void chat().send(text); });
   ipcMain.handle('devin:chat-approve', (e, id, decision) => {
-    if (fromPanel(e) && panel.isFocused()) chat().decide(id, decision);
+    if (fromVisiblePanel(e) && panel.isFocused()) chat().decide(id, decision);
   });
-  ipcMain.handle('devin:chat-stop', (e) => { if (fromPanel(e)) chat().stop(); });
-  ipcMain.handle('devin:chat-reset', (e) => { if (fromPanel(e)) chat().reset(); });
+  ipcMain.handle('devin:chat-stop', (e) => { if (fromVisiblePanel(e)) chat().stop(); });
+  ipcMain.handle('devin:chat-reset', (e) => { if (fromVisiblePanel(e)) chat().reset(); });
 }
 
 function registerDevinIpc() {

@@ -3,9 +3,48 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
+const { runInNewContext } = require('node:vm');
 const { DevinChat } = require('../src/main/devin-chat');
+
+test('only the Devin panel can read chat state before it is shown; hidden actions stay blocked', async () => {
+  const mainPath = path.join(__dirname, '../src/main/main.js');
+  const handlers = new Map();
+  const contents = { mainFrame: {} };
+  const event = { sender: contents, senderFrame: contents.mainFrame };
+  const state = { messages: [{ role: 'user', text: 'Existing chat' }] };
+  const calls = [];
+  const app = {
+    requestSingleInstanceLock: () => true, setAppUserModelId() {}, on() {},
+    whenReady: () => ({ then() {} }), getPath: () => __dirname,
+  };
+  const modules = {
+    path, electron: { app, ipcMain: { handle: (name, fn) => handlers.set(name, fn) } },
+    './devin-chat': { DevinChat: class {
+      check() { return state; }
+      send() { calls.push('send'); }
+      decide() { calls.push('approve'); }
+      stop() { calls.push('stop'); }
+      reset() { calls.push('reset'); }
+    } },
+    './devin-desktop': { createWindowsDesktop() {} },
+  };
+  runInNewContext(readFileSync(mainPath, 'utf8') + `
+    panelWidget = 'devin';
+    panel = { webContents: contents, isDestroyed: () => false, isVisible: () => false, isFocused: () => true };
+    registerDevinChatIpc();
+  `, {
+    __dirname: path.dirname(mainPath), process: { platform: 'win32', on() {} },
+    require: (id) => modules[id] || {}, contents,
+  }, { filename: mainPath });
+  const status = handlers.get('devin:chat-status');
+  assert.equal(await status(event), state);
+  assert.equal(await status({ ...event, senderFrame: {} }), null);
+  for (const action of ['send', 'approve', 'stop', 'reset']) handlers.get(`devin:chat-${action}`)(event);
+  assert.deepEqual(calls, []);
+});
 
 test('ACP chat streams, scopes its MCP token, and gates desktop actions on explicit decisions', { timeout: 12000 }, async (t) => {
   const performed = [], approvals = [], streamed = [];
