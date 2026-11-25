@@ -82,6 +82,14 @@ button.devin-session:hover, button.devin-session:focus-visible { background: var
 .tile .ph { display: flex; align-items: center; justify-content: center; background: var(--active); font-weight: 600; }
 .tile span.n { width: 100%; height: 32px; line-height: 16px; overflow: hidden; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+@media (max-height: 260px) {
+  #panel[data-widget="start"] { overflow-y: auto; }
+  #panel[data-widget="start"] .head { flex: none; }
+  #panel[data-widget="start"] #body { flex: none; overflow: visible; }
+  .launcher-search { position: sticky; top: 0; z-index: 1; background: var(--panel-solid); }
+  .grid-apps { flex: none; overflow: visible; scrollbar-gutter: auto; }
+  .tile { scroll-margin-top: 50px; }
+}
 .month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; font-size: 12px; margin-bottom: 12px; font-variant-numeric: tabular-nums; }
 .month > .muted { font-size: 10px; font-weight: 600; padding-bottom: 2px; }
 .month .d { padding: 7px 0; border-radius: 9px; position: relative; background: var(--card); } .month .today { background: var(--today); color: #fff; font-weight: 700; }
