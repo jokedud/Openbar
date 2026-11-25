@@ -35,6 +35,7 @@
     "portable": {
       "artifactName": "OpenBar-${version}-portable-${arch}.exe",
       "useZip": true,
+      "unpackDirName": true,
       "splashImage": "build/portable-splash.bmp"
     },
     "nsis": { "artifactName": "OpenBar-${version}-setup-${arch}.exe", "oneClick": false, "allowToChangeInstallationDirectory": true }
