@@ -192,27 +192,26 @@ P.pomodoro = (body) => {
 
 // ---------- todos ----------
 P.todos = (body) => {
+  const list = h('div');
+  const drawTodos = () => {
+    const todos = [...(OB.data.todos || [])].sort((a, b) => a.done - b.done);
+    const toggle = (t) => OB.setDataKey('todos', OB.data.todos.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x))).then(drawTodos);
+    const del = (t) => OB.setDataKey('todos', OB.data.todos.filter((x) => x.id !== t.id)).then(drawTodos);
+    list.replaceChildren(...todos.map((t) => h('div', { class: `list-item ${t.done ? 'done' : ''}` },
+      h('button', { class: 'check', onclick: () => toggle(t) }, t.done ? icon('check', 12) : null), h('span', { class: 't grow' }, t.text),
+      h('button', { class: 'x btn icon', title: 'Delete', onclick: () => del(t) }, icon('x', 12)))));
+    if (!todos.length) list.append(empty('All clear.'));
+  };
   setHead('To-dos', actionBtn('trash', 'Clear completed', () => OB.setDataKey('todos', OB.data.todos.filter((t) => !t.done)).then(drawTodos)));
   const input = h('input', { placeholder: 'Add a to-do and press Enter', style: { width: '100%', marginBottom: '8px' } });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && input.value.trim()) { OB.setDataKey('todos', [{ id: uid(), text: input.value.trim(), done: false, at: Date.now() }, ...OB.data.todos]).then(drawTodos); input.value = ''; }
     if (e.key === 'Escape') api.invoke('panel:close');
   });
-  body.append(input, h('div', { id: 'todos' }));
+  body.append(input, list);
   setTimeout(() => input.focus(), 30);
   drawTodos();
 };
-function drawTodos() {
-  const list = $('todos');
-  if (!list) return;
-  const todos = [...(OB.data.todos || [])].sort((a, b) => a.done - b.done);
-  const toggle = (t) => OB.setDataKey('todos', OB.data.todos.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x))).then(drawTodos);
-  const del = (t) => OB.setDataKey('todos', OB.data.todos.filter((x) => x.id !== t.id)).then(drawTodos);
-  list.replaceChildren(...todos.map((t) => h('div', { class: `list-item ${t.done ? 'done' : ''}` },
-    h('button', { class: 'check', onclick: () => toggle(t) }, t.done ? icon('check', 12) : null), h('span', { class: 't grow' }, t.text),
-    h('button', { class: 'x btn icon', title: 'Delete', onclick: () => del(t) }, icon('x', 12)))));
-  if (!todos.length) list.append(empty('All clear.'));
-}
 
 // ---------- notes ----------
 P.notes = (body) => {
