@@ -74,7 +74,7 @@ function mountBatteryPanel(body, setTitle) {
       !b?.mode ? 'Manage power mode in Windows Settings.' :
       b.saver ? 'Turn off energy saver in Windows to change power mode.' : '');
     updateText(powerText, hasBattery ? 'Power & battery settings' : 'Power & sleep settings');
-    saverSettings.hidden = !hasBattery;
+    saverSettings.hidden = !hasBattery && b?.saver == null;
   }
 
   async function refresh() {

@@ -6,6 +6,21 @@ const { test } = require('node:test');
 const vm = require('node:vm');
 const { decodeStatus, estimateChargeTime, openPowerSettings } = require('../src/main/battery');
 
+function windowsBattery(build, functions) {
+  const file = path.join(__dirname, '..', 'src', 'main', 'battery.js');
+  const module = { exports: {} };
+  const koffi = {
+    load: () => ({ func: (signature) => functions[signature.match(/(\w+)\(/)[1]] }),
+    decode: (buffer, offset, type) => offset === 20 ? buffer.readUInt32LE(offset) :
+      offset === 'uint8_t' ? buffer.subarray(0, type) : buffer,
+  };
+  vm.runInNewContext(fs.readFileSync(file, 'utf8'), {
+    module, Buffer, process, require: (name) => name === 'koffi' ? koffi :
+      name === 'node:os' ? { release: () => '10.0.' + build } : require(name),
+  });
+  return module.exports.createBattery();
+}
+
 function status(ac, flags, percent, saver, time = 0xffffffff) {
   const raw = Buffer.alloc(12);
   raw.set([ac, flags, percent, saver]);
@@ -32,6 +47,43 @@ test('remaining time and low battery are meaningful only when Windows reports ba
   assert.equal(status(0, 4, 255, 0).low, true);
   assert.equal(status(1, 2, 12, 0, 3600).low, false);
   assert.equal(status(0, 0, 42, 0).remaining, null);
+});
+
+test('Windows 11 Energy Saver notifications override a legacy Off flag and block mode changes', () => {
+  const saverGuid = Buffer.from('00840e559be2d441a716446655440000', 'hex');
+  let notify, writes = 0, changes = 0;
+  const battery = windowsBattery(26100, {
+    GetSystemPowerStatus: (raw) => { raw.set([0, 0, 80, 0]); return 1; },
+    RegisterPowerSettingNotification: (_hwnd, setting) => { assert.deepEqual(setting, saverGuid); return 7; },
+    UnregisterPowerSettingNotification: (handle) => assert.equal(handle, 7),
+    PowerGetActualOverlayScheme: () => 0,
+    PowerSetActiveOverlayScheme: () => { writes++; return 0; },
+    PowerGetActiveScheme: (_root, out) => { out[0] = Buffer.from('22421b3894f6f0419685ff5bb260df2e', 'hex'); return 0; },
+    LocalFree() {},
+  });
+  const stop = battery.watchSaver({
+    hookWindowMessage: (message, fn) => { assert.equal(message, 0x0218); notify = fn; },
+    isDestroyed: () => false,
+    unhookWindowMessage: (message) => { assert.equal(message, 0x0218); notify = null; },
+  }, 1, () => changes++);
+  const payload = Buffer.alloc(24);
+  saverGuid.copy(payload);
+  payload.writeUInt32LE(4, 16);
+  assert.equal(battery.read().saver, false);
+  payload.writeUInt32LE(1, 20);
+  notify(0x8013, payload);
+  assert.equal(battery.read().saver, true);
+  assert.equal(battery.setMode('balanced'), false);
+  assert.equal(writes, 0);
+  payload.writeUInt32LE(2, 20);
+  notify(0x8013, payload);
+  assert.equal(battery.read().saver, true);
+  payload.writeUInt32LE(0, 20);
+  notify(0x8013, payload);
+  assert.equal(battery.read().saver, false);
+  assert.equal(changes, 2);
+  stop();
+  assert.equal(notify, null);
 });
 
 test('time to full requires a charging report with current capacity and a positive charging rate', () => {
