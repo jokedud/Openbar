@@ -308,6 +308,9 @@ function createBar() {
     title: 'OpenBar', icon: ICON, webPreferences,
   });
   bar.setAlwaysOnTop(true, 'screen-saver');
+  bar.webContents.on('render-process-gone', () => {
+    if (!cleanedUp && isWin && D().taskbarRestore) app.quit();
+  });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
   if (isWin) barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
