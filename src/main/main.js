@@ -374,7 +374,7 @@ function applySettings(prev) {
   const s = S();
   layoutBar();
   if (prev.taskbar !== s.taskbar) applyTaskbar();
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!s.launchAtLogin });
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!s.launchAtLogin, path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath });
   if (JSON.stringify(prev.commands) !== JSON.stringify(s.commands)) scheduleCommands();
   if (JSON.stringify(prev.weather) !== JSON.stringify(s.weather)) refreshers.weather();
   if (JSON.stringify(prev.calendars) !== JSON.stringify(s.calendars)) refreshers.calendar();
