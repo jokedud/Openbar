@@ -146,6 +146,22 @@ function syncBackdrop(win) {
   if (!window.isVisible()) window.showInactive();
 }
 
+function registerSurfaceIpc() {
+  ipcMain.on('surface:bounds', (e, surface) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const backdrop = backdrops.get(win);
+    if (!backdrop || !surface) return;
+    const { x, y, width, height, radius } = surface;
+    if (![x, y, width, height, radius].every(Number.isFinite) || width <= 2 || height <= 2 || radius < 1) return;
+    backdrop.surface = { x, y, width, height, radius };
+    syncBackdrop(win);
+  });
+  ipcMain.on('surface:mouse', (e, overPadding) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (backdrops.has(win)) win.setIgnoreMouseEvents(overPadding === true, { forward: true });
+  });
+}
+
 // ---------------- Windows taskbar ----------------
 function applyTaskbar() {
   if (!isWin) return;
@@ -668,19 +684,6 @@ function registerIpc() {
   ipcMain.handle('open', (_e, url) => { if (SAFE_URL.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
-  ipcMain.on('surface:bounds', (e, surface) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
-    const backdrop = backdrops.get(win);
-    if (!backdrop || !surface) return;
-    const { x, y, width, height, radius } = surface;
-    if (![x, y, width, height, radius].every(Number.isFinite) || width <= 2 || height <= 2 || radius < 1) return;
-    backdrop.surface = { x, y, width, height, radius };
-    syncBackdrop(win);
-  });
-  ipcMain.on('surface:mouse', (e, overPadding) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
-    if (backdrops.has(win)) win.setIgnoreMouseEvents(overPadding === true, { forward: true });
-  });
   ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));
   ipcMain.handle('bar:width', (_e, w) => { if (Math.abs(w - lastContentWidth) > 2) { lastContentWidth = w; if (S().layout === 'pill') layoutBar(); } });
@@ -724,6 +727,7 @@ app.whenReady().then(() => {
   }
   if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
   registerIpc();
+  if (isWin) registerSurfaceIpc();
   createBar();
   createTray();
   applyTaskbar();

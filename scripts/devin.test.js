@@ -140,7 +140,7 @@ function mainIpc(initialConfig, storedToken = 'cog_test') {
     decryptString: () => storedToken,
     encryptString: () => Buffer.from('new ciphertext'),
   };
-  const electron = { app, safeStorage, ipcMain: { handle: (name, handler) => handlers.set(name, handler), on() {} } };
+  const electron = { app, safeStorage, ipcMain: { handle: (name, handler) => handlers.set(name, handler) } };
   const context = vm.createContext({
     require: (name) => ({ path, electron, './devin': require('../src/main/devin'), './store': { DEFAULT_SETTINGS } })[name] || {},
     __dirname, Buffer, settings, credentials, sender, process: { platform: 'test', on() {} },
