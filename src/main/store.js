@@ -5,10 +5,10 @@ const { app } = require('electron');
 
 const DEFAULT_SETTINGS = {
   position: 'bottom',          // bottom | top
-  layout: 'full',              // full | pill
+  layout: 'pill',              // full | pill
   style: 'glass',              // glass | midnight | white | black | ios
   height: 46,
-  margin: 6,
+  margin: 10,
   reserveSpace: true,          // register as an AppBar so maximised windows don't cover the dock
   taskbar: 'hide',             // hide | autohide | keep
   launchAtLogin: false,

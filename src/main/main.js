@@ -1,6 +1,6 @@
 'use strict';
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
 const sources = require('./sources');
 const calendar = require('./calendar');
@@ -66,13 +66,13 @@ function layoutBar() {
   // Windows may move the reserved strip (e.g. above a visible taskbar); follow it.
   if (reserved && reserved.height > 0) b.y = reserved.y;
   bar.setBounds(b);
-  clipGlass(bar, barHwnd, S().margin, barRadius(S().height));
+  clipGlass(bar, barHwnd, S().margin, barRadius(S().height), b);
   bar.setAlwaysOnTop(true, 'screen-saver');
 }
 
 // ---------------- glass ----------------
 // Same ratios as --bar-r / --panel-r in theme.css and common.js, so the blur region matches the CSS shape.
-const barRadius = (height) => Math.round(height * 0.3);
+const barRadius = (height) => Math.round(height / 2);
 const PANEL_RADIUS = 18;
 let glassMode = 'off';
 function transparencyEnabled() {
@@ -92,13 +92,20 @@ function enableGlass(hwnd) {
   state.glass = glassMode;
   broadcast('state', { glass: glassMode });
 }
-function clipGlass(win, hwnd, inset, radius) {
+// Windows broadcasts a theme change when "Transparency effects" is toggled.
+function refreshGlass() {
+  enableGlass(barHwnd);
+  if (panel && !panel.isDestroyed() && panelHwnd) setBackdrop(panelHwnd, glassMode === 'off' ? 'off' : 'acrylic');
+  layoutBar();
+}
+// Windows applies a resize lazily, so callers pass the size they just set instead of reading it back.
+function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
   if (!isWin || !hwnd || glassMode === 'off') return;
-  const { width, height } = win.getContentBounds();
+  const { width, height } = size;
   const k = screen.getDisplayMatching(win.getBounds()).scaleFactor;
   const px = (v) => Math.round(v * k);
   try {
-    win32.setRoundRegion(hwnd, { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) });
+    win32.setRoundRegion(hwnd, { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) + 1 });
   } catch (e) { console.error('region', e); }
 }
 
@@ -343,11 +350,11 @@ function createBar() {
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); }
+  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); nativeTheme.on('updated', refreshGlass); }
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 420], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; return; }
@@ -372,11 +379,11 @@ function togglePanel(widget, anchorX) {
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
     panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
     if (panelHwnd) setBackdrop(panelHwnd, glassMode === 'off' ? 'off' : 'acrylic');
-    panel.on('show', () => clipGlass(panel, panelHwnd, 0, PANEL_RADIUS));
+    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
     panel.setBounds({ x, y, width: w, height: h });
-    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS);
+    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
     panel.webContents.send('panel:widget', widget);
     panel.show(); panel.focus();
   }

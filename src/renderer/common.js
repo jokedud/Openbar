@@ -25,7 +25,7 @@ function applyTheme() {
   document.documentElement.dataset.layout = s.layout || 'full';
   document.documentElement.dataset.glass = OB.state.glass || 'off';
   document.documentElement.style.setProperty('--bar-h', (s.height || 46) + 'px');
-  document.documentElement.style.setProperty('--bar-r', Math.round((s.height || 46) * 0.3) + 'px');
+  document.documentElement.style.setProperty('--bar-r', Math.round((s.height || 46) / 2) + 'px');
   document.documentElement.style.setProperty('--bar-m', (s.margin || 6) + 'px');
 }
 

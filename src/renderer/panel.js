@@ -277,6 +277,12 @@ P.quick = (body) => {
 };
 
 // ---------- router ----------
+function animateIn() {
+  const el = $('panel');
+  el.classList.remove('enter');
+  void el.offsetWidth;
+  el.classList.add('enter');
+}
 async function draw(force) {
   if (!force && stable.has(widget)) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
@@ -286,9 +292,9 @@ async function draw(force) {
   $('body').replaceChildren(...body.childNodes);
 }
 OB.init().then(() => {
-  draw(true);
+  draw(true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
-  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch'); });
+  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
