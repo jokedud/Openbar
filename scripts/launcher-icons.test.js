@@ -20,7 +20,12 @@ test('launcher shortcut icons prefer the app icon and fall back to the shortcut'
   };
   const context = vm.createContext({
     module: {},
-    require: (name) => name === 'electron' ? { app, shell } : require(name),
+    process: { platform: 'win32' },
+    require: (name) => {
+      if (name === 'electron') return { app, shell };
+      if (name === './shortcut-icon') return { shortcutIcon: () => '' };
+      return require(name);
+    },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'startmenu.js'), 'utf8'), context);
   const { iconFor } = context.module.exports;
@@ -28,4 +33,27 @@ test('launcher shortcut icons prefer the app icon and fall back to the shortcut'
   assert.equal(await iconFor('Web App.lnk'), 'Web App.lnk');
   assert.equal(await iconFor('Missing.lnk'), 'Missing.lnk');
   assert.equal(await iconFor('Example.url'), 'Example.url');
+});
+
+test('launcher prefers the Windows Shell icon for a shortcut with an icon resource', async () => {
+  const lookups = [];
+  const context = vm.createContext({
+    module: {},
+    process: { platform: 'win32' },
+    require: (name) => {
+      if (name === 'electron') return {
+        shell: { readShortcutLink: () => ({ target: 'mmc.exe', icon: 'shell32.dll', iconIndex: -108 }) },
+        app: { getFileIcon: async () => ({ isEmpty: () => false, toDataURL: () => 'generic-white-shortcut' }) },
+      };
+      if (name === './shortcut-icon') return {
+        shortcutIcon(file) { lookups.push(file); return 'resolved-icon'; },
+      };
+      return require(name);
+    },
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'startmenu.js'), 'utf8'), context);
+  const { iconFor } = context.module.exports;
+  assert.equal(await iconFor('Performance Monitor.lnk'), 'resolved-icon');
+  assert.equal(await iconFor('Performance Monitor.lnk'), 'resolved-icon');
+  assert.deepEqual(lookups, ['Performance Monitor.lnk']);
 });
