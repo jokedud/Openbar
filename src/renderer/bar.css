@@ -3,13 +3,13 @@ body { padding: var(--bar-m); }
 #bar { height: var(--bar-h); display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--bg); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: 0 2px 12px rgba(0,0,0,.25); }
 [data-layout="pill"] body { display: flex; justify-content: center; }
-[data-layout="pill"] #bar { display: inline-flex; width: auto; max-width: 100%; }
+[data-layout="pill"] #bar { display: inline-flex; width: auto; max-width: 100%; overflow: hidden; }
 .zone { display: flex; align-items: center; gap: 2px; min-width: 0; height: 100%; }
 #left { flex: 1 1 0; justify-content: flex-start; overflow: hidden; }
 #center { flex: 0 0 auto; justify-content: center; }
 #right { flex: 1 1 0; justify-content: flex-end; }
-[data-layout="pill"] #left { flex: 0 1 auto; min-width: 0; overflow: hidden; }
-[data-layout="pill"] #right { flex: 0 0 auto; }
+[data-layout="pill"] #left, [data-layout="pill"] #center, [data-layout="pill"] #right { flex: 0 0 auto; min-width: max-content; }
+[data-layout="pill"] #left:has(.apps), [data-layout="pill"] #center:has(.apps), [data-layout="pill"] #right:has(.apps) { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .w { display: flex; align-items: center; gap: 6px; height: calc(var(--bar-h) - 10px); padding: 0 8px; border-radius: calc(var(--radius) - 5px); white-space: nowrap; flex: none; }
 .w:hover, .w.open { background: var(--hover); }
 .w .val { font-variant-numeric: tabular-nums; }
@@ -33,4 +33,4 @@ body { padding: var(--bar-m); }
 .pomo.focus { color: var(--bad); } .pomo.break { color: var(--good); }
 .event.soon { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .badge { font-size: 10px; background: var(--accent); color: var(--accent-fg); border-radius: 8px; padding: 1px 6px; }
-[data-layout="pill"] #center, [data-layout="pill"] #right { min-width: max-content; } [data-layout="pill"] .apps { min-width: 0; overflow: hidden; }
+[data-layout="pill"] .apps { min-width: 0; overflow: hidden; }
