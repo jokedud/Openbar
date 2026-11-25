@@ -19,7 +19,7 @@ let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
 const state = {
-  system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0,
+  system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
   errors: {},
 };
@@ -147,12 +147,18 @@ async function pollWindows() {
     dataStore.save();
     if (now - (pollWindows.stSent || 0) > 30000) { pollWindows.stSent = now; broadcast('data', D()); }
   }
-  const sig = JSON.stringify(list.map((w) => [w.hwnd, w.title, w.minimized])) + active;
+  const previousOrder = new Map(state.windows.map((w, i) => [w.hwnd, i]));
+  const rank = (w) => previousOrder.get(w.hwnd) ?? previousOrder.size;
+  const recentHwnds = list.map((w) => w.hwnd);
+  const appKeys = new Set(list.map((w) => (w.path || w.exe).toLowerCase()));
+  const windowAppOrder = state.windowAppOrder.filter((key) => appKeys.delete(key)).concat([...appKeys]);
+  list.sort((a, b) => rank(a) - rank(b));
+  const sig = JSON.stringify([list.map((w) => [w.hwnd, w.title, w.minimized]), active, recentHwnds, windowAppOrder]);
   if (sig !== pollWindows.sig) {
     pollWindows.sig = sig;
-    state.windows = list;
-    state.activeHwnd = active;
-    broadcast('state', { windows: list, activeHwnd: active });
+    const windowState = { windows: list, activeHwnd: active, recentHwnds, windowAppOrder };
+    Object.assign(state, windowState);
+    broadcast('state', windowState);
   }
 }
 
@@ -230,7 +236,7 @@ function runAutomations() {
     }
     if (a.pauseMusicBeforeMeetings && mins <= a.pauseMinutesBefore && mins > a.pauseMinutesBefore - 1 && !fired.has('p' + ev.id)) {
       fired.add('p' + ev.id);
-      if (mediaPlaying()) win32.sendKey('playpause');
+      if (mediaPlaying()) sources.controlMedia('pause');
     }
   }
   const day = localDay();
@@ -270,12 +276,13 @@ function pomodoroAction(action) {
   if (action === 'start') {
     if (p.phase === 'paused') { p.phase = p.resumePhase || 'focus'; p.endsAt = now + p.remainingMs; }
     else { p.phase = 'focus'; p.endsAt = now + cfg.focusMin * 60000; }
-    if (S().automations.pauseMusicOnPomodoro && mediaPlaying()) win32.sendKey('playpause');
+    if (S().automations.pauseMusicOnPomodoro && mediaPlaying()) sources.controlMedia('pause');
   } else if (action === 'pause' && (p.phase === 'focus' || p.phase === 'break')) {
     p.resumePhase = p.phase; p.remainingMs = Math.max(0, p.endsAt - now); p.phase = 'paused';
   } else if (action === 'reset') {
     p.phase = 'idle'; p.endsAt = 0; p.remainingMs = 0;
   } else if (action === 'skip') {
+    if (p.phase === 'paused') p.phase = p.resumePhase || 'focus';
     p.endsAt = now;
     tickPomodoro();
   }
@@ -310,6 +317,9 @@ function createBar() {
     title: 'OpenBar', icon: ICON, webPreferences,
   });
   bar.setAlwaysOnTop(true, 'screen-saver');
+  bar.webContents.on('render-process-gone', () => {
+    if (!cleanedUp && isWin && D().taskbarRestore) app.quit();
+  });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
   if (isWin) barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
@@ -458,7 +468,7 @@ function registerIpc() {
   ipcMain.handle('apps:list', (_e, force) => startmenu.listApps(force));
   ipcMain.handle('apps:icon', (_e, file) => startmenu.iconFor(file));
   ipcMain.handle('exe:icon', (_e, file) => exeIcon(file));
-  ipcMain.handle('media', (_e, key) => { if (win32) win32.sendKey(key); });
+  ipcMain.handle('media', (_e, action) => isWin && sources.controlMedia(action));
   ipcMain.handle('system', (_e, action) => { const f = SYSTEM_ACTIONS[action]; if (f) f(); });
   ipcMain.handle('open', (_e, url) => { if (SAFE_URL.test(String(url))) shell.openExternal(String(url)); });
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));

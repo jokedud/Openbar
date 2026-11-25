@@ -3,12 +3,13 @@ body { padding: var(--bar-m); }
 #bar { height: var(--bar-h); display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--bg); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: 0 2px 12px rgba(0,0,0,.25); }
 [data-layout="pill"] body { display: flex; justify-content: center; }
-[data-layout="pill"] #bar { display: inline-flex; width: auto; }
+[data-layout="pill"] #bar { display: inline-flex; width: auto; max-width: 100%; overflow: hidden; }
 .zone { display: flex; align-items: center; gap: 2px; min-width: 0; height: 100%; }
 #left { flex: 1 1 0; justify-content: flex-start; overflow: hidden; }
 #center { flex: 0 0 auto; justify-content: center; }
 #right { flex: 1 1 0; justify-content: flex-end; }
-[data-layout="pill"] #left, [data-layout="pill"] #right { flex: 0 0 auto; }
+[data-layout="pill"] #left, [data-layout="pill"] #center, [data-layout="pill"] #right { flex: 0 0 auto; min-width: max-content; }
+[data-layout="pill"] #left:has(.apps), [data-layout="pill"] #center:has(.apps), [data-layout="pill"] #right:has(.apps) { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .w { display: flex; align-items: center; gap: 6px; height: calc(var(--bar-h) - 10px); padding: 0 8px; border-radius: calc(var(--radius) - 5px); white-space: nowrap; flex: none; }
 .w:hover, .w.open { background: var(--hover); }
 .w .val { font-variant-numeric: tabular-nums; }
@@ -20,7 +21,7 @@ body { padding: var(--bar-m); }
 .app.active { background: var(--active); }
 .app img, .app .ph { width: 24px; height: 24px; flex: none; border-radius: 6px; }
 .app .ph { display: flex; align-items: center; justify-content: center; background: var(--hover); font-weight: 600; font-size: 12px; }
-.app .label { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.app .label { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app .dot { position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%); height: 3px; width: 6px; border-radius: 2px; background: var(--muted); }
 .app.active .dot { width: 16px; background: var(--accent); }
 .app .count { position: absolute; top: 2px; right: 2px; font-size: 9px; background: var(--accent); color: var(--accent-fg); border-radius: 6px; padding: 0 4px; }
@@ -32,4 +33,4 @@ body { padding: var(--bar-m); }
 .pomo.focus { color: var(--bad); } .pomo.break { color: var(--good); }
 .event.soon { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .badge { font-size: 10px; background: var(--accent); color: var(--accent-fg); border-radius: 8px; padding: 1px 6px; }
-[data-layout="pill"] .zone { min-width: max-content; } [data-layout="pill"] #left { overflow: visible; } [data-layout="pill"] .apps { overflow: visible; }
+[data-layout="pill"] .apps { min-width: 0; overflow: hidden; }

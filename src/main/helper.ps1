@@ -1,4 +1,6 @@
 # OpenBar helper: streams now-playing media (Windows SMTC) and network counters as JSON lines.
+param([ValidateSet('playpause', 'pause', 'prev', 'next')][string]$MediaAction)
+
 $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -13,6 +15,19 @@ function Await($op, [Type]$type) {
 $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
 $null = [Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType = WindowsRuntime]
 $mgr = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
+
+if ($MediaAction) {
+  $session = if ($mgr) { $mgr.GetCurrentSession() }
+  if (-not $session) { exit 1 }
+  $operation = switch ($MediaAction) {
+    'playpause' { $session.TryTogglePlayPauseAsync() }
+    'pause' { $session.TryPauseAsync() }
+    'prev' { $session.TrySkipPreviousAsync() }
+    'next' { $session.TrySkipNextAsync() }
+  }
+  if ($operation -and (Await $operation ([bool]))) { exit 0 }
+  exit 1
+}
 
 $lastKey = ''
 $lastArt = $null

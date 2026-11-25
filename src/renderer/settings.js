@@ -19,6 +19,20 @@ const field = (label, hint, control) => h('div', { class: 'field' }, h('div', { 
 const toggle = (get, set) => { const b = h('button', { class: `toggle ${get() ? 'on' : ''}` }); b.onclick = () => { set(!get()); b.classList.toggle('on'); }; return b; };
 const seg = (opts, cur, set) => h('div', { class: 'seg' }, ...opts.map(([v, l]) => h('button', { class: cur === v ? 'on' : '', onclick: () => set(v) }, l)));
 const text = (val, set, ph, type = 'text') => { const i = h('input', { type, value: val == null ? '' : val, placeholder: ph || '' }); i.onchange = () => set(type === 'number' ? Number(i.value) : i.value.trim()); return i; };
+const num = (val, min, max, fallback, set) => {
+  const i = h('input', { type: 'number', value: val == null ? '' : val, min, ...(max != null ? { max } : {}) });
+  i.onchange = () => {
+    const raw = Number(i.value);
+    let v = i.value.trim() !== '' && Number.isFinite(raw) ? raw : fallback;
+    if (min != null) v = Math.max(min, v);
+    if (max != null) v = Math.min(max, v);
+    i.value = String(v);
+    set(v);
+  };
+  return i;
+};
+let appQuery = '';
+let stateUpdater = null;
 const sel = (opts, cur, set) => { const s = h('select', {}, ...opts.map(([v, l]) => h('option', { value: v, selected: v === cur }, l))); s.onchange = () => set(s.value); return s; };
 const deepSet = (key, patch) => save({ [key]: Object.assign({}, S()[key], patch) });
 
@@ -46,8 +60,8 @@ T.general = (m) => {
   m.append(h('h2', {}, 'Layout'));
   m.append(field('Position', null, seg([['bottom', 'Bottom'], ['top', 'Top']], S().position, (v) => save({ position: v }).then(draw))));
   m.append(field('Layout', 'Full width spans the screen; pill floats in the centre and fits its content.', seg([['full', 'Full width'], ['pill', 'Pill']], S().layout, (v) => save({ layout: v }).then(draw))));
-  m.append(field('Bar height', '32–72 px', text(S().height, (v) => save({ height: Math.max(32, Math.min(72, v || 46)) }), '', 'number')));
-  m.append(field('Gap around the bar', '0–20 px', text(S().margin, (v) => save({ margin: Math.max(0, Math.min(20, v || 0)) }), '', 'number')));
+  m.append(field('Bar height', '32–72 px', num(S().height, 32, 72, 46, (v) => save({ height: v }))));
+  m.append(field('Gap around the bar', '0–20 px', num(S().margin, 0, 20, 6, (v) => save({ margin: v }))));
   m.append(field('Reserve screen space', 'Maximised windows stop at the bar instead of going under it.', toggle(() => S().reserveSpace, (v) => save({ reserveSpace: v }))));
   m.append(h('h2', {}, 'Behaviour'));
   m.append(field('Windows taskbar', 'What to do with the built-in taskbar while OpenBar runs.', taskbarSeg()));
@@ -95,13 +109,20 @@ T.apps = (m) => {
   });
   if (!pinned.length) list.append(h('p', { class: 'hint' }, 'Nothing pinned yet.'));
   m.append(list, h('h2', {}, 'Add from Start Menu'));
-  const q = h('input', { type: 'text', placeholder: 'Search installed apps…', style: { width: '320px' } });
+  const q = h('input', { type: 'text', value: appQuery, placeholder: 'Search installed apps…', style: { width: '320px' } });
   const res = h('div', { class: 'results' });
+  const pinnedSet = new Set(pinned.map((p) => (p.path || '').toLowerCase()));
   let apps = [];
   const show = () => {
+    appQuery = q.value;
     const t = q.value.trim().toLowerCase();
-    res.replaceChildren(...apps.filter((a) => !t || a.name.toLowerCase().includes(t)).slice(0, 40).map((a) => h('div', { class: 'li' }, h('span', { class: 'grow' }, a.name),
-      h('button', { class: 'btn', onclick: () => save({ pinned: [...S().pinned, { name: a.name, path: a.path, target: a.target || '' }] }).then(draw) }, icon('plus', 12), 'Pin'))));
+    res.replaceChildren(...apps.filter((a) => !t || a.name.toLowerCase().includes(t)).slice(0, 40).map((a) => {
+      const already = pinnedSet.has((a.path || '').toLowerCase());
+      return h('div', { class: 'li' }, h('span', { class: 'grow' }, a.name),
+        already
+          ? h('button', { class: 'btn', disabled: true, style: { opacity: '.5' } }, 'Pinned')
+          : h('button', { class: 'btn', onclick: () => save({ pinned: [...S().pinned, { name: a.name, path: a.path, target: a.target || '' }] }).then(draw) }, icon('plus', 12), 'Pin'));
+    }));
   };
   q.oninput = show;
   api.invoke('apps:list').then((a) => { apps = a; show(); });
@@ -121,12 +142,18 @@ T.calendar = (m) => {
     h('button', { class: 'btn icon', onclick: () => save({ calendars: cals.filter((_, j) => j !== i) }).then(draw) }, icon('trash', 14)))));
   const n = h('input', { type: 'text', placeholder: 'Name (e.g. Work)' }), u = h('input', { type: 'text', placeholder: 'https://… .ics or webcal://…', style: { width: '380px' } });
   m.append(list, h('div', { class: 'row', style: { marginTop: '10px' } }, n, u, h('button', { class: 'btn primary', onclick: () => { if (u.value.trim()) save({ calendars: [...cals, { name: n.value.trim() || 'Calendar', url: u.value.trim() }] }).then(draw); } }, 'Add calendar')));
-  const st = OB.state.calendar || {};
-  m.append(h('p', { class: 'hint', style: { marginTop: '14px' } }, `${(st.events || []).length} upcoming events loaded.`, ...(st.errors || []).map((e) => h('div', { class: 'bad' }, e))));
+  const status = h('p', { class: 'hint', style: { marginTop: '14px' } });
+  const renderStatus = () => {
+    const st = OB.state.calendar || {};
+    status.replaceChildren(`${(st.events || []).length} upcoming events loaded.`, ...(st.errors || []).map((e) => h('div', { class: 'bad' }, e)));
+  };
+  renderStatus();
+  stateUpdater = renderStatus;
+  m.append(status);
   m.append(h('h2', {}, 'Meetings'));
-  const a = S().automations, setA = (p) => deepSet('automations', p);
-  m.append(field('Reminder before meetings', 'A notification with a one-click Join button for Zoom, Meet, Teams, Webex and Whereby links.', toggle(() => a.meetingReminders, (v) => setA({ meetingReminders: v }))));
-  m.append(field('Minutes before', null, text(a.reminderMinutesBefore, (v) => setA({ reminderMinutesBefore: v || 5 }), '', 'number')));
+  const setA = (p) => deepSet('automations', p);
+  m.append(field('Reminder before meetings', 'A notification with a one-click Join button for Zoom, Meet, Teams, Webex and Whereby links.', toggle(() => S().automations.meetingReminders, (v) => setA({ meetingReminders: v }))));
+  m.append(field('Minutes before', null, num(S().automations.reminderMinutesBefore, 1, null, 5, (v) => setA({ reminderMinutesBefore: v }))));
 };
 
 T.weather = (m) => {
@@ -135,9 +162,17 @@ T.weather = (m) => {
   m.append(field('City', 'e.g. Toronto, London, Tokyo', text(w.city, (v) => deepSet('weather', { city: v, lat: null, lon: null }), 'Auto-detect')));
   m.append(field('Units', null, seg([['celsius', '°C'], ['fahrenheit', '°F']], w.units, (v) => deepSet('weather', { units: v }).then(draw))));
   m.append(field('Umbrella reminder', 'Morning notification when rain is likely today.', toggle(() => S().automations.umbrellaReminder, (v) => deepSet('automations', { umbrellaReminder: v }))));
-  const cur = OB.state.weather;
-  if (cur) m.append(h('p', { class: 'hint' }, `Currently ${Math.round(cur.current.temperature_2m)}° in ${cur.place || 'your area'}.`));
-  if (OB.state.errors && OB.state.errors.weather) m.append(h('p', { class: 'hint bad' }, OB.state.errors.weather));
+  const status = h('div', {});
+  const renderStatus = () => {
+    const cur = OB.state.weather;
+    const kids = [];
+    if (cur && cur.current) kids.push(h('p', { class: 'hint' }, `Currently ${Math.round(cur.current.temperature_2m)}° in ${cur.place || 'your area'}.`));
+    if (OB.state.errors && OB.state.errors.weather) kids.push(h('p', { class: 'hint bad' }, OB.state.errors.weather));
+    status.replaceChildren(...kids);
+  };
+  renderStatus();
+  stateUpdater = renderStatus;
+  m.append(status);
 };
 
 T.clocks = (m) => {
@@ -146,7 +181,7 @@ T.clocks = (m) => {
   const list = h('div', { class: 'list' });
   z.forEach((tz, i) => list.append(h('div', { class: 'li' }, icon('globe', 16), h('span', { class: 'grow' }, tz), h('span', { class: 'muted' }, (() => { try { return new Date().toLocaleTimeString([], { timeZone: tz, hour: 'numeric', minute: '2-digit' }); } catch (_) { return 'invalid'; } })()),
     h('button', { class: 'btn icon', onclick: () => save({ worldClocks: z.filter((_, j) => j !== i) }).then(draw) }, icon('trash', 14)))));
-  const zones = (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []);
+  const zones = (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []).filter((x) => !z.includes(x));
   const s = sel([['', 'Add a time zone…'], ...zones.map((x) => [x, x])], '', (v) => { if (v) save({ worldClocks: [...z, v] }).then(draw); });
   m.append(list, s);
 };
@@ -162,14 +197,25 @@ T.integrations = (m) => {
 };
 
 T.commands = (m) => {
-  m.append(h('h1', {}, 'Command widgets'), h('p', { class: 'lead' }, 'Turn any PowerShell command into a live widget: build status, unread mail count, git branch, a server ping, your AI usage via a CLI… The first line of output is shown on the bar. Add the widget from the Widgets page.'));
+  m.append(h('h1', {}, 'Command widgets'), h('p', { class: 'lead' }, 'Turn any PowerShell command into a live widget: build status, unread mail count, git branch, a server ping, your AI usage via a CLI… The first line of output is shown on the bar. New commands are added to the right side of the bar; reorder or move them on the Widgets page.'));
   const cmds = S().commands;
   const list = h('div', { class: 'list' });
+  const outNodes = new Map();
   cmds.forEach((c, i) => {
-    const r = (OB.state.commands || {})[c.id];
-    list.append(h('div', { class: 'li' }, icon('terminal', 16), h('div', { class: 'grow' }, h('div', {}, c.label, h('span', { class: 'muted' }, `  every ${c.intervalSec}s`)), h('code', {}, c.command), r ? h('div', { class: `hint ${r.ok ? '' : 'bad'}` }, '→ ' + r.output.split(/\r?\n/)[0]) : null),
+    const out = h('div', { class: 'hint' });
+    outNodes.set(c.id, out);
+    list.append(h('div', { class: 'li' }, icon('terminal', 16), h('div', { class: 'grow' }, h('div', {}, c.label, h('span', { class: 'muted' }, `  every ${c.intervalSec}s`)), h('code', {}, c.command), out),
       h('button', { class: 'btn icon', onclick: () => { const left = S().left.filter((x) => x !== 'cmd:' + c.id), center = S().center.filter((x) => x !== 'cmd:' + c.id), right = S().right.filter((x) => x !== 'cmd:' + c.id); save({ commands: cmds.filter((_, j) => j !== i), left, center, right }).then(draw); } }, icon('trash', 14))));
   });
+  const renderOutputs = () => {
+    for (const [id, out] of outNodes) {
+      const r = (OB.state.commands || {})[id];
+      out.className = `hint ${r && !r.ok ? 'bad' : ''}`;
+      out.textContent = r ? '→ ' + r.output.split(/\r?\n/)[0] : '';
+    }
+  };
+  renderOutputs();
+  stateUpdater = renderOutputs;
   const l = h('input', { type: 'text', placeholder: 'Label' }), cm = h('input', { type: 'text', placeholder: 'e.g. (Get-Date).DayOfYear', style: { width: '320px' } }), iv = h('input', { type: 'number', value: 60, style: { width: '80px' } });
   m.append(list, h('div', { class: 'row', style: { marginTop: '10px', flexWrap: 'wrap' } }, l, cm, iv, h('span', { class: 'muted' }, 'sec'), h('button', { class: 'btn primary', onclick: () => {
     if (!cm.value.trim()) return;
@@ -180,22 +226,22 @@ T.commands = (m) => {
 };
 
 T.automations = (m) => {
-  const a = S().automations, set = (p) => deepSet('automations', p);
+  const set = (p) => deepSet('automations', p);
   m.append(h('h1', {}, 'Automations'), h('p', { class: 'lead' }, 'Small things OpenBar does for you in the background.'));
-  m.append(field('Pause music before meetings', 'Pauses whatever is playing shortly before a calendar event starts.', toggle(() => a.pauseMusicBeforeMeetings, (v) => set({ pauseMusicBeforeMeetings: v }))));
-  m.append(field('Minutes before meeting to pause', null, text(a.pauseMinutesBefore, (v) => set({ pauseMinutesBefore: v || 1 }), '', 'number')));
-  m.append(field('Meeting reminders', 'Notification with one-click Join.', toggle(() => a.meetingReminders, (v) => set({ meetingReminders: v }))));
-  m.append(field('Pause music when a focus session starts', null, toggle(() => a.pauseMusicOnPomodoro, (v) => set({ pauseMusicOnPomodoro: v }))));
-  m.append(field('Umbrella reminder', 'Morning heads-up when rain is likely.', toggle(() => a.umbrellaReminder, (v) => set({ umbrellaReminder: v }))));
-  m.append(field('High CPU alert', 'Notify when CPU stays above 90% for a minute.', toggle(() => a.highCpuAlert, (v) => set({ highCpuAlert: v }))));
-  m.append(field('Low disk alert', 'Notify when the system drive is under 5% free.', toggle(() => a.lowDiskAlert, (v) => set({ lowDiskAlert: v }))));
+  m.append(field('Pause music before meetings', 'Pauses whatever is playing shortly before a calendar event starts.', toggle(() => S().automations.pauseMusicBeforeMeetings, (v) => set({ pauseMusicBeforeMeetings: v }))));
+  m.append(field('Minutes before meeting to pause', null, num(S().automations.pauseMinutesBefore, 0, null, 1, (v) => set({ pauseMinutesBefore: v }))));
+  m.append(field('Meeting reminders', 'Notification with one-click Join.', toggle(() => S().automations.meetingReminders, (v) => set({ meetingReminders: v }))));
+  m.append(field('Pause music when a focus session starts', null, toggle(() => S().automations.pauseMusicOnPomodoro, (v) => set({ pauseMusicOnPomodoro: v }))));
+  m.append(field('Umbrella reminder', 'Morning heads-up when rain is likely.', toggle(() => S().automations.umbrellaReminder, (v) => set({ umbrellaReminder: v }))));
+  m.append(field('High CPU alert', 'Notify when CPU stays above 90% for a minute.', toggle(() => S().automations.highCpuAlert, (v) => set({ highCpuAlert: v }))));
+  m.append(field('Low disk alert', 'Notify when the system drive is under 5% free.', toggle(() => S().automations.lowDiskAlert, (v) => set({ lowDiskAlert: v }))));
 };
 
 T.focus = (m) => {
   const p = S().pomodoro;
   m.append(h('h1', {}, 'Focus timer'), h('p', { class: 'lead' }, 'A Pomodoro timer on the bar. Sessions are counted per day.'));
-  m.append(field('Focus minutes', null, text(p.focusMin, (v) => deepSet('pomodoro', { focusMin: Math.max(1, v || 25) }), '', 'number')));
-  m.append(field('Break minutes', null, text(p.breakMin, (v) => deepSet('pomodoro', { breakMin: Math.max(1, v || 5) }), '', 'number')));
+  m.append(field('Focus minutes', null, num(p.focusMin, 1, null, 25, (v) => deepSet('pomodoro', { focusMin: v }))));
+  m.append(field('Break minutes', null, num(p.breakMin, 1, null, 5, (v) => deepSet('pomodoro', { breakMin: v }))));
 };
 
 T.about = (m) => {
@@ -213,6 +259,7 @@ T.about = (m) => {
 
 function go(t) { tab = t; draw(); }
 function draw() {
+  stateUpdater = null;
   $('nav').replaceChildren($('nav').firstElementChild, ...TABS.map(([k, l, ic]) => h('button', { class: tab === k ? 'on' : '', onclick: () => go(k) }, icon(ic, 15), l)));
   const m = $('main'), y = m.scrollTop;
   m.replaceChildren();
@@ -222,5 +269,8 @@ function draw() {
 OB.init().then(() => {
   draw();
   api.on('settings:tab', (t) => go(t));
-  OB.on((kind) => { if (kind === 'settings' && !document.activeElement.matches('input, select, textarea')) draw(); });
+  OB.on((kind) => {
+    if (kind === 'settings' && (!document.activeElement || !document.activeElement.matches('input, select, textarea'))) draw();
+    else if (kind === 'state' && stateUpdater) stateUpdater();
+  });
 });
