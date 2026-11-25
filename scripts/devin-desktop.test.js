@@ -8,17 +8,18 @@ const { createWindowsDesktop } = require('../src/main/devin-desktop');
 
 test('scrolling targets the app under the pointer even with focus-routed wheel input', () => {
   const panel = 1, desktop = 2, child = 3;
-  let foreground = panel, mayFocus = true;
+  let foreground = panel, mayFocus = true, routing = 0, pointer;
   const routed = [];
   const native = {
     WindowFromPoint: () => child,
     GetAncestor: () => desktop,
     GetWindowThreadProcessId: (_, pid) => { pid[0] = 200; },
     IsWindow: () => true,
-    SetCursorPos: () => true,
+    SetCursorPos: (x, y) => { pointer = { x, y }; return true; },
     GetForegroundWindow: () => foreground,
     SetForegroundWindow: (hwnd) => { if (mayFocus) foreground = hwnd; },
-    SendInput: (count) => { routed.push(foreground); return count; },
+    SystemParametersInfoW: (_, __, output) => { output[0] = routing; return true; },
+    SendInput: (count) => { routed.push(routing === 2 ? (pointer ? desktop : panel) : foreground); return count; },
   };
   const koffi = {
     load: () => ({ func: (signature, name) => native[name || signature.match(/(\w+)\(/)[1]] }),
@@ -38,4 +39,9 @@ test('scrolling targets the app under the pointer even with focus-routed wheel i
   mayFocus = false;
   assert.throws(() => action.run(), /focus the desktop scroll target/);
   assert.deepEqual(routed, [desktop]);
+  routing = 2;
+  pointer = null;
+  assert.doesNotThrow(() => action.run());
+  assert.deepEqual(routed, [desktop, desktop]);
+  assert.equal(foreground, panel);
 });

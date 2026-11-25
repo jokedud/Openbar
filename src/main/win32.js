@@ -68,6 +68,7 @@ const PostMessageW = user32.func('bool __stdcall PostMessageW(intptr_t hWnd, uin
 const keybd_event = user32.func('void __stdcall keybd_event(uint8_t vk, uint8_t scan, uint32_t flags, uintptr_t extra)');
 const SetCursorPos = user32.func('bool __stdcall SetCursorPos(int x, int y)');
 const WindowFromPoint = user32.func('intptr_t __stdcall WindowFromPoint(POINT pt)');
+const SystemParametersInfoW = user32.func('bool __stdcall SystemParametersInfoW(uint32_t action, uint32_t param, _Out_ uint32_t *value, uint32_t flags)');
 const LockWorkStation = user32.func('bool __stdcall LockWorkStation()');
 const AllowSetForegroundWindow = user32.func('bool __stdcall AllowSetForegroundWindow(uint32_t pid)');
 
@@ -97,6 +98,8 @@ const WS_EX_APPWINDOW = 0x40000;
 const WS_EX_NOACTIVATE = 0x8000000;
 const GW_OWNER = 4;
 const GA_ROOT = 2;
+const SPI_GETMOUSEWHEELROUTING = 0x201c;
+const MOUSEWHEEL_ROUTING_MOUSE_POS = 2;
 const DWMWA_CLOAKED = 14;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 const SW_HIDE = 0, SW_MAXIMIZE = 3, SW_SHOWNA = 8, SW_RESTORE = 9, SW_MINIMIZE = 6, SW_SHOW = 5;
@@ -325,7 +328,11 @@ function clickDesktopMouse(button) {
 
 function scrollDesktopMouse(point, steps) {
   const hwnd = GetAncestor(WindowFromPoint(point), GA_ROOT);
-  if (!hwnd || !activateDesktopInputTarget(hwnd, processId(hwnd))) throw new Error('Could not focus the desktop scroll target');
+  const pid = hwnd && processId(hwnd);
+  if (!pid || pid === process.pid) throw new Error('No eligible desktop scroll target');
+  const routing = [0];
+  const hoverScroll = SystemParametersInfoW(SPI_GETMOUSEWHEELROUTING, 0, routing, 0) && routing[0] === MOUSEWHEEL_ROUTING_MOUSE_POS;
+  if (!hoverScroll && !activateDesktopInputTarget(hwnd, pid)) throw new Error('Could not focus the desktop scroll target');
   sendDesktopInput([mouseInput(0x0800, steps * 120)]);
 }
 
