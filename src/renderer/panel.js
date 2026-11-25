@@ -114,10 +114,11 @@ P.weather = (body) => {
   const c = w.current, deg = '°', [ic, label] = weatherInfo(c.weather_code);
   body.append(h('div', { class: 'card row' }, icon(ic, 40), h('div', { class: 'grow' }, h('div', { class: 'big' }, Math.round(c.temperature_2m) + deg),
     h('div', { class: 'muted' }, `${label} · feels ${Math.round(c.apparent_temperature)}${deg} · ${c.relative_humidity_2m}% humidity · wind ${Math.round(c.wind_speed_10m)}`))));
-  const nowIdx = w.hourly.time.findIndex((t) => new Date(t).getTime() >= Date.now() - 3600000);
+  const forecastHour = c.time.slice(0, 13) + ':00';
+  const nowIdx = w.hourly.time.findIndex((t) => t >= forecastHour);
   const hours = h('div', { class: 'hours' });
   for (let i = Math.max(0, nowIdx); i < Math.max(0, nowIdx) + 24 && i < w.hourly.time.length; i++) {
-    hours.append(h('div', {}, h('span', { class: 'muted' }, new Date(w.hourly.time[i]).toLocaleTimeString([], { hour: 'numeric' })),
+    hours.append(h('div', {}, h('span', { class: 'muted' }, new Date(w.hourly.time[i] + 'Z').toLocaleTimeString([], { hour: 'numeric', timeZone: 'UTC' })),
       icon(weatherInfo(w.hourly.weather_code[i])[0], 16), h('b', {}, Math.round(w.hourly.temperature_2m[i]) + deg),
       h('span', { class: 'muted' }, (w.hourly.precipitation_probability[i] || 0) + '%')));
   }
