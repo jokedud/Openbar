@@ -77,7 +77,11 @@ let allApps = null, query = '', sel = 0;
 P.start = (body) => {
   const grid = h('div', { class: 'grid-apps' });
   setHead('Apps', actionBtn('refresh', 'Re-scan Start Menu', async () => { allApps = await api.invoke('apps:list', true); drawApps(grid); }), settingsBtn('apps'));
-  const input = h('input', { placeholder: 'Search apps…  (Enter to launch, Ctrl+Enter to pin)', style: { width: '100%', marginBottom: '10px' }, value: query });
+  const input = h('input', { class: 'launcher-input', placeholder: 'Search apps…', 'aria-label': 'Search apps', 'aria-describedby': 'launcher-shortcuts', value: query });
+  const search = h('div', { class: 'launcher-search' }, h('span', { 'aria-hidden': 'true' }, icon('search', 17)), input);
+  const shortcuts = h('div', { class: 'launcher-shortcuts', id: 'launcher-shortcuts' },
+    h('span', {}, h('kbd', {}, 'Enter'), ' Open'),
+    h('span', {}, h('kbd', {}, 'Ctrl + Enter'), ' Pin to dock'));
   input.addEventListener('input', () => { query = input.value; sel = 0; drawApps(grid); });
   input.addEventListener('keydown', (e) => {
     const items = filtered();
@@ -86,7 +90,7 @@ P.start = (body) => {
     if (e.key === 'Enter' && items[sel]) { if (e.ctrlKey) pin(items[sel]); else launch(items[sel]); }
     if (e.key === 'Escape') api.invoke('panel:close');
   });
-  body.append(input, grid);
+  body.append(search, grid, shortcuts);
   setTimeout(() => input.focus(), 30);
   if (!allApps) api.invoke('apps:list').then((a) => { allApps = a; drawApps(grid); });
   drawApps(grid);
@@ -105,10 +109,10 @@ function drawApps(grid) {
   const items = filtered().slice(0, 60);
   grid.replaceChildren(...items.map((a, i) => {
     const img = h('span', { class: 'ph' }, a.name.charAt(0).toUpperCase());
-    const t = h('button', { class: `tile ${i === sel ? 'sel' : ''}`, title: a.name + '  (right-click to pin)', onclick: () => launch(a),
+    const t = h('button', { class: `tile ${i === sel ? 'sel' : ''}`, 'aria-label': a.name, title: a.name + '  (right-click to pin)', onclick: () => launch(a),
       oncontextmenu: async (e) => { e.preventDefault(); const id = await api.invoke('menu', [{ id: 'open', label: 'Open' }, { id: 'pin', label: 'Pin to OpenBar' }]); if (id === 'open') launch(a); if (id === 'pin') pin(a); } },
     img, h('span', { class: 'n' }, a.name));
-    const set = (d) => { if (d) img.replaceWith(h('img', { src: d })); };
+    const set = (d) => { if (d) img.replaceWith(h('img', { src: d, alt: '' })); };
     if (tileIcons.has(a.path)) set(tileIcons.get(a.path));
     else api.invoke('apps:icon', a.path).then((d) => { tileIcons.set(a.path, d); set(d); });
     return t;
