@@ -6,6 +6,7 @@ const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
 const { shortcutTarget } = require('./custom-tabs');
 const TaskbarRecovery = require('./taskbar-recovery');
 const sources = require('./sources');
+const { registerBrightnessIpc } = require('./brightness');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
@@ -405,6 +406,7 @@ function createBar() {
 
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 const DEVIN_PANEL_RADIUS = 28;
+PANEL_SIZES.brightness = [336, 270];
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
@@ -694,6 +696,8 @@ app.whenReady().then(() => {
     settingsStore.save(true);
   }
   if (isWin && app.isPackaged && S().launchAtLogin && win32.isLoginItemMissing(APP_ID)) syncLoginItem();
+  registerBrightnessIpc(ipcMain, shell, (e) =>
+    panelWidget === 'brightness' && panel && !panel.isDestroyed() && e.sender === panel.webContents, isWin);
   registerIpc();
   createBar();
   createTray();
