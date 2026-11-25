@@ -89,4 +89,14 @@ test('window focus falls back to AttachThreadInput and SwitchToThisWindow when S
   fg = 99;
   assert.equal(context.module.exports.focusWindow(42, { restore: false }), true);
   assert.deepEqual(calls.slice(-1), [['switch', 42, false]]);
+
+  // 4. Skips AttachThreadInput for hung windows so a frozen app cannot block the dock.
+  calls.length = 0;
+  fg = 99;
+  methods.IsHungAppWindow = (hwnd) => hwnd === 42;
+  const ctx2 = vm.createContext({ require: () => koffi, module: {} });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'win32.js'), 'utf8'), ctx2);
+  assert.equal(ctx2.module.exports.focusWindow(42), true);
+  assert.equal(calls.some((c) => c[0] === 'attach'), false);
+  assert.deepEqual(calls.slice(-1), [['switch', 42, true]]);
 });
