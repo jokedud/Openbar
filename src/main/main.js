@@ -274,6 +274,7 @@ function pomodoroAction(action) {
   } else if (action === 'reset') {
     p.phase = 'idle'; p.endsAt = 0; p.remainingMs = 0;
   } else if (action === 'skip') {
+    if (p.phase === 'paused') p.phase = p.resumePhase || 'focus';
     p.endsAt = now;
     tickPomodoro();
   }
