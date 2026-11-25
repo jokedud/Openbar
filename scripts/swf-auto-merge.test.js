@@ -25,6 +25,7 @@ function fixture() {
     latestOpinionatedReviews: { nodes: [{ state: 'APPROVED' }], pageInfo },
   };
   const current = structuredClone(pr);
+  const comparison = { behind_by: 0 };
   const writes = [];
   const output = [];
   const queries = [];
@@ -42,6 +43,7 @@ function fixture() {
         return { data: { repository: { pullRequest: result } } };
       }
       case `${repo}/pulls/1`: return current;
+      case `${repo}/compare/main...${sha}`: return comparison;
       case `${repo}/pulls/1/merge`:
         assert.equal(method, 'PUT');
         writes.push(body);
@@ -49,7 +51,7 @@ function fixture() {
       default: assert.fail(`Unexpected request: ${path}`);
     }
   };
-  return { pr, statuses, checks, build, review, current, writes, output, queries,
+  return { pr, statuses, checks, build, review, current, comparison, writes, output, queries,
     run: (merge) => scan(api, { merge, log: (line) => output.push(line) }) };
 }
 
@@ -79,6 +81,7 @@ for (const [reason, alter] of [
   ['waiting — changes requested', (f) => { f.review.latestOpinionatedReviews.nodes[0].state = 'CHANGES_REQUESTED'; }],
   ['waiting — unresolved review threads', (f) => { f.review.reviewThreads.nodes[0].isResolved = false; }],
   ['waiting — merge state is DIRTY', (f) => { f.review.mergeStateStatus = 'DIRTY'; }],
+  ['waiting — behind main', (f) => { f.comparison.behind_by = 1; }],
   ['eligibility or merge state changed during the scan', (f) => { f.current.head.sha = 'new-sha'; }],
   ['eligibility or merge state changed during the scan', (f) => { f.current.title = 'A manual PR'; }],
 ]) {

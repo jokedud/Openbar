@@ -106,6 +106,11 @@ async function scan(api, { merge = false, log = console.log } = {}) {
       log(`${label}: eligibility or merge state changed during the scan`);
       continue;
     }
+    const comparison = await api(`${repoPath}/compare/main...${pr.head.sha}?per_page=1`);
+    if (comparison.behind_by !== 0) {
+      log(`${label}: waiting — behind main`);
+      continue;
+    }
     if (!merge) {
       log(`${label}: would merge`);
       continue;
