@@ -3,7 +3,7 @@
 let widget = new URLSearchParams(location.search).get('widget');
 const $ = (id) => document.getElementById(id);
 const P = {};
-const stable = new Set(['start', 'todos', 'notes']); // panels with inputs: don't rebuild on every tick
+const stable = new Set(['start', 'todos', 'notes', 'devin']); // panels with local state: don't rebuild on every tick
 
 function setHead(title, ...actions) { $('title').textContent = title; $('actions').replaceChildren(...actions); }
 const actionBtn = (ic, title, onclick) => h('button', { class: 'btn icon', title, onclick }, icon(ic, 14));
@@ -274,15 +274,90 @@ P.quick = (body) => {
   }
 };
 
+const devinErrors = {
+  missing: 'Add your Devin API key in OpenBar Settings to see your cloud sessions.',
+  auth: 'Devin rejected this key or it cannot view sessions. Check the key and its permissions in Settings.',
+  organization: 'Check the Devin organization ID in Settings.',
+  storage: 'OpenBar could not read the saved key. Try saving it again in Settings.',
+  offline: 'Could not reach Devin. Check your connection and try again.',
+  rate: 'Devin is receiving too many requests. Wait a moment, then try again.',
+  unavailable: 'Devin sessions are unavailable right now. Try again in a moment.',
+};
+
+P.devin = (body) => {
+  const list = h('div', { class: 'devin-list' });
+  const message = h('div', { class: 'devin-message muted', role: 'status' });
+  const more = h('button', { class: 'btn', hidden: true }, 'Load more');
+  const seen = new Set();
+  let next = null, request = 0;
+  const load = async (append = false) => {
+    const current = ++request;
+    if (!append) { list.replaceChildren(); seen.clear(); next = null; more.hidden = true; }
+    more.disabled = true;
+    message.textContent = 'Loading cloud sessions…';
+    const page = await api.invoke('devin:list', next).catch(() => ({ error: 'unavailable' }));
+    if (current !== request) return;
+    more.disabled = false;
+    if (page.error) {
+      message.replaceChildren(empty(devinErrors[page.error] || devinErrors.unavailable,
+        ['missing', 'auth', 'organization', 'storage'].includes(page.error) ? 'devin' : null));
+      return;
+    }
+    message.textContent = '';
+    for (const session of page.sessions) {
+      if (seen.has(session.id)) continue;
+      seen.add(session.id);
+      const status = session.status;
+      const time = session.updatedAt == null ? null : new Date(session.updatedAt);
+      list.append(h('button', { class: 'devin-session', onclick: async () => {
+        if (!await api.invoke('devin:open', session.id).catch(() => false)) message.textContent = 'Could not open this session in your browser.';
+      } },
+      h('div', { class: 'devin-session-copy' }, h('strong', {}, session.title), h('span', { class: 'muted' },
+        time ? `Updated ${time.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Update time unavailable')),
+      h('span', { class: `devin-status ${['running', 'working', 'resuming'].includes(status) ? 'live' : ''}` }, status)));
+    }
+    next = page.next;
+    more.hidden = next == null;
+    if (!seen.size && more.hidden) message.append(empty('No cloud sessions found.'));
+  };
+  more.onclick = () => load(true);
+  setHead('Devin sessions', actionBtn('refresh', 'Refresh', () => load()), settingsBtn('devin'));
+  body.append(h('div', { class: 'devin-content' },
+    h('div', { class: 'devin-label' }, icon('devin', 14), 'CLOUD SESSIONS'), list, message, more));
+  load();
+};
+
 // ---------- router ----------
+let devinSizeObserver;
 function animateIn() {
   const el = $('panel');
+  devinSizeObserver?.disconnect();
+  devinSizeObserver = null;
+  el.dataset.widget = widget || '';
   el.classList.remove('enter');
+  if (widget === 'devin') {
+    const header = el.firstElementChild;
+    const content = $('body').firstElementChild;
+    let height;
+    const observer = new ResizeObserver(() => {
+      const measured = header.offsetHeight + content.offsetHeight;
+      if (observer !== devinSizeObserver || height === measured) return;
+      height = measured;
+      const start = !el.classList.contains('enter');
+      api.invoke('panel:fit-devin', height).catch(() => {}).then(() => {
+        if (start && observer === devinSizeObserver) el.classList.add('enter');
+      });
+    });
+    devinSizeObserver = observer;
+    observer.observe(header);
+    observer.observe(content);
+    return;
+  }
   void el.offsetWidth;
   el.classList.add('enter');
 }
 async function draw(force) {
-  if (!force && stable.has(widget)) return;
+  if (stable.has(widget) && (!force || (widget === 'devin' && force !== 'switch'))) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
   const fn = P[widget];
@@ -292,7 +367,7 @@ async function draw(force) {
   $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
-  draw(true).then(animateIn);
+  draw(widget === 'devin' ? 'switch' : true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
   api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });

@@ -18,7 +18,7 @@ const appImg = (src, name) => (src ? h('img', { src, draggable: 'false' }) : let
 function panelBtn(name, cls, ...kids) {
   return h('button', { class: `w ${cls || ''} ${openPanel === name ? 'open' : ''}`, 'data-panel': name, title: TITLES[name] || '' }, ...kids);
 }
-const TITLES = { start: 'Launcher (search apps)', weather: 'Weather', system: 'System', network: 'Network', battery: 'Battery', pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', nextEvent: 'Calendar', calendar: 'Calendar', clock: 'Clock & world clocks', media: 'Now playing', github: 'GitHub', crypto: 'Crypto', screenTime: 'Screen time', quick: 'Quick actions' };
+const TITLES = { start: 'Launcher (search apps)', weather: 'Weather', system: 'System', network: 'Network', battery: 'Battery', pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', nextEvent: 'Calendar', calendar: 'Calendar', clock: 'Clock & world clocks', media: 'Now playing', github: 'GitHub', devin: 'Devin sessions', crypto: 'Crypto', screenTime: 'Screen time', quick: 'Quick actions' };
 
 const W = {};
 W.start = () => panelBtn('start', '', icon('grid', 18));
@@ -124,6 +124,7 @@ W.todos = () => {
   return panelBtn('todos', '', icon('check', 16), open ? h('span', { class: 'badge' }, open) : null);
 };
 W.notes = () => panelBtn('notes', '', icon('note', 16));
+W.devin = () => panelBtn('devin', '', icon('devin', 16), h('span', {}, 'Devin'));
 W.github = () => {
   const g = OB.state.github;
   return panelBtn('github', '', icon('github', 16), g ? h('span', { class: 'val' }, g.commitsToday) : null);

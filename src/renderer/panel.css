@@ -10,6 +10,41 @@ body { padding: 0; }
 #panel.enter #body > :nth-child(2) { animation-delay: 30ms; } #panel.enter #body > :nth-child(3) { animation-delay: 60ms; }
 #panel.enter #body > :nth-child(4) { animation-delay: 90ms; } #panel.enter #body > :nth-child(n+5) { animation-delay: 120ms; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+#panel[data-widget="devin"] {
+  border-radius: 28px;
+  background: radial-gradient(ellipse at 25% 0%, rgba(108,145,255,.24), transparent 68%), var(--panel-bg);
+  box-shadow: inset 0 0 0 1px var(--panel-rim), inset 0 2px 0 rgba(255,255,255,.12);
+  --bubble-shift: 18px;
+}
+[data-position="top"] #panel[data-widget="devin"] { --bubble-shift: -18px; }
+#panel[data-widget="devin"]:not(.enter) { visibility: hidden; }
+#panel[data-widget="devin"].enter { animation: devin-bubble .48s cubic-bezier(.22,.72,.26,1) both; }
+@keyframes devin-bubble {
+  0% { opacity: 0; transform: translateY(var(--bubble-shift)) scale(.78,.57); }
+  60% { opacity: 1; transform: scale(1,.965); }
+  82% { transform: scale(.994,1.005); }
+  100% { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #panel[data-widget="devin"].enter, #panel[data-widget="devin"].enter #body > * { animation: none; }
+}
+#panel[data-widget="devin"] .head { flex: none; padding: 18px 18px 10px; }
+#panel[data-widget="devin"] #body { padding: 0; }
+.devin-content { padding: 4px 14px 16px; }
+.devin-label { display: flex; gap: 7px; align-items: center; padding: 2px 5px 10px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .13em; }
+.devin-list { display: grid; gap: 6px; }
+.devin-session {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 10px 12px;
+  text-align: left; background: var(--card); border-radius: 14px; box-shadow: inset 0 0 0 1px var(--card-line);
+}
+.devin-session:hover, .devin-session:focus-visible { background: var(--hover); }
+.devin-session-copy { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.devin-session-copy .muted, .devin-status { font-size: 11px; }
+.devin-status { padding: 4px 8px; border-radius: 999px; background: var(--hover); text-transform: capitalize; flex: none; }
+.devin-status.live { color: var(--good); }
+.devin-message:not(:empty) { padding: 10px 5px; }
+.devin-content > .btn { margin-top: 8px; }
+.devin-content > .btn[hidden] { display: none; }
 .head { display: flex; align-items: center; gap: 8px; padding: 16px 16px 10px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
 #body { flex: 1; overflow-y: auto; padding: 2px 12px 12px; }
 .card { background: var(--card); box-shadow: inset 0 0 0 1px var(--card-line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; }

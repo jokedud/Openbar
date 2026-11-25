@@ -2,12 +2,13 @@
 const TABS = [
   ['welcome', 'Welcome', 'grid'], ['general', 'Appearance', 'desktop'], ['widgets', 'Widgets', 'grid'], ['custom-tabs', 'Custom tabs', 'grid'], ['apps', 'Pinned apps', 'pin'],
   ['calendar', 'Calendar', 'calendar'], ['weather', 'Weather', 'sun'], ['clocks', 'World clocks', 'globe'], ['integrations', 'GitHub & crypto', 'github'],
+  ['devin', 'Devin', 'devin'],
   ['commands', 'Command widgets', 'terminal'], ['automations', 'Automations', 'bolt'], ['focus', 'Focus timer', 'timer'], ['about', 'Backup & about', 'note'],
 ];
 const WIDGETS = {
   start: 'App launcher', apps: 'Pinned & running apps', search: 'Windows search', desktop: 'Show desktop', sep: 'Separator', clock: 'Clock & date',
   nextEvent: 'Next meeting', weather: 'Weather', system: 'CPU & RAM', network: 'Network speed', battery: 'Battery', media: 'Now playing',
-  pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', github: 'GitHub activity', crypto: 'Crypto prices', screenTime: 'Screen time',
+  pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', github: 'GitHub activity', devin: 'Devin sessions', crypto: 'Crypto prices', screenTime: 'Screen time',
   quick: 'Quick actions', settings: 'Settings button',
 };
 let tab = new URLSearchParams(location.search).get('tab') || 'general';
@@ -196,6 +197,44 @@ T.integrations = (m) => {
   m.append(field('Currency', null, text(c.currency, (v) => deepSet('crypto', { currency: (v || 'usd').toLowerCase() }))));
 };
 
+T.devin = (m) => {
+  const key = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Paste your key', 'aria-label': 'Devin API key' });
+  const organization = h('input', { type: 'text', placeholder: 'org-…', 'aria-label': 'Devin organization ID' });
+  const status = h('p', { class: 'hint', role: 'status' });
+  const update = async (channel, ...args) => {
+    saveKey.disabled = true;
+    removeKey.disabled = true;
+    const config = await api.invoke(channel, ...args).catch(() => ({ error: 'storage' }));
+    saveKey.disabled = false;
+    if (config.error) {
+      removeKey.disabled = !configured;
+      status.textContent = ({
+        invalid: 'Paste a valid Devin API key.',
+        organization: 'Enter the organization ID from Settings → Devin API.',
+        storage: 'Could not update the key in secure storage.',
+      })[config.error];
+      return;
+    }
+    configured = config.configured;
+    removeKey.disabled = !configured;
+    organization.value = config.orgId;
+    key.placeholder = configured ? 'Leave blank to keep saved key' : 'Paste your key';
+    key.value = '';
+    status.textContent = configured ? 'API key saved on this PC.' : 'No API key saved.';
+  };
+  let configured = false;
+  const saveKey = h('button', { class: 'btn primary', onclick: () => update('devin:save', key.value, organization.value) }, 'Save Devin settings');
+  const removeKey = h('button', { class: 'btn', onclick: () => update('devin:remove') }, 'Remove API key');
+  m.append(h('h1', {}, 'Devin'), h('p', { class: 'lead' }, 'Open Devin Cloud sessions right from the dock. The public Devin API does not list local desktop sessions.'),
+    field('API key', 'Create a personal access token in Devin under Settings → Devin API. OpenBar encrypts the key on this PC.', key),
+    field('Organization ID', 'Required for current tokens. Copy it from the top of the same page. Legacy apk_ keys do not use this field.', organization),
+    h('div', { class: 'row' }, saveKey, removeKey), status);
+  if (!['left', 'center', 'right'].some((zone) => S()[zone].includes('devin'))) {
+    m.append(h('button', { class: 'btn', onclick: () => save({ right: [...S().right, 'devin'] }).then(draw) }, 'Add Devin to dock'));
+  }
+  update('devin:config');
+};
+
 T.commands = (m) => {
   m.append(h('h1', {}, 'Command widgets'), h('p', { class: 'lead' }, 'Turn any PowerShell command into a live widget: build status, unread mail count, git branch, a server ping, your AI usage via a CLI… The first line of output is shown on the bar. New commands are added to the right side of the bar; reorder or move them on the Widgets page.'));
   const cmds = S().commands;
@@ -252,7 +291,15 @@ T.about = (m) => {
       const f = e.target.files[0]; if (!f) return;
       try { const j = JSON.parse(await f.text()); const cmds = (j.settings && j.settings.commands) || []; if (cmds.length && !confirm(`This backup contains command widgets that will run on this PC:\n\n${cmds.map((c) => c.command).join('\n')}\n\nImport them?`)) j.settings.commands = []; if (j.settings) await api.invoke('settings:replace', j.settings); if (j.data) for (const k of Object.keys(j.data)) if (k !== 'taskbarRestore') await OB.setDataKey(k, j.data[k]); OB.settings = await api.invoke('init').then((r) => r.settings); draw(); } catch (err) { alert('Invalid backup: ' + err.message); }
     } })),
-    h('button', { class: 'btn', onclick: async () => { if (confirm('Reset all settings to defaults?')) { OB.settings = await api.invoke('settings:reset'); draw(); } } }, 'Reset settings'),
+    h('button', { class: 'btn', onclick: async () => {
+      if (!confirm('Reset all settings to defaults and remove the saved Devin API key?')) return;
+      try {
+        OB.settings = await api.invoke('settings:reset');
+        draw();
+      } catch {
+        alert('Could not reset settings.');
+      }
+    } }, 'Reset settings'),
     h('button', { class: 'btn', onclick: () => api.invoke('open', 'https://github.com/jokedud/openbar') }, icon('github', 14), 'Source code'),
     h('button', { class: 'btn', onclick: () => api.invoke('quit') }, icon('power', 14), 'Quit OpenBar')));
 };
