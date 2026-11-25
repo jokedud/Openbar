@@ -217,11 +217,12 @@ T.devin = (m) => {
     configured = config.configured;
     removeKey.disabled = !configured;
     organization.value = config.orgId;
+    key.placeholder = configured ? 'Leave blank to keep saved key' : 'Paste your key';
     key.value = '';
     status.textContent = configured ? 'API key saved on this PC.' : 'No API key saved.';
   };
   let configured = false;
-  const saveKey = h('button', { class: 'btn primary', onclick: () => update('devin:save', key.value, organization.value) }, 'Save API key');
+  const saveKey = h('button', { class: 'btn primary', onclick: () => update('devin:save', key.value, organization.value) }, 'Save Devin settings');
   const removeKey = h('button', { class: 'btn', onclick: () => update('devin:remove') }, 'Remove API key');
   m.append(h('h1', {}, 'Devin'), h('p', { class: 'lead' }, 'Open Devin Cloud sessions right from the dock. The public Devin API does not list local desktop sessions.'),
     field('API key', 'Create a personal access token in Devin under Settings → Devin API. OpenBar encrypts the key on this PC.', key),

@@ -494,7 +494,13 @@ function registerDevinIpc() {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
     if (typeof key !== 'string' || typeof organization !== 'string') return { error: 'invalid' };
     const token = key.trim(), orgId = organization.trim();
-    if (!token || /\s/.test(token)) return { error: 'invalid' };
+    if (!token) {
+      const saved = devinStore.get();
+      if (!saved.encrypted) return { error: 'invalid' };
+      if ((orgId || saved.orgId) && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
+      return saveConfig({ encrypted: saved.encrypted, orgId });
+    }
+    if (/\s/.test(token)) return { error: 'invalid' };
     if (!token.startsWith('apk_') && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
     if (!storageAvailable()) return { error: 'storage' };
     try {

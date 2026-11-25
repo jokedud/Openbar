@@ -101,3 +101,44 @@ test('the Devin bubble stays six pixels from the visible dock at either edge', (
   vm.runInContext("panel = null; togglePanel('devin', 350)", context);
   assert.equal(bounds.y, context.dock.y + context.dock.height - settings.margin + 6);
 });
+
+function mainIpc(initialConfig) {
+  const { deepMerge, DEFAULT_SETTINGS } = requireStore();
+  const store = (defaults, initial) => ({
+    value: initial, get() { return this.value; }, save() {},
+    replace(patch) { this.value = deepMerge(defaults, patch); },
+  });
+  const settings = store(DEFAULT_SETTINGS, { ...DEFAULT_SETTINGS, layout: 'full' });
+  const credentials = store({ encrypted: '', orgId: '' }, initialConfig);
+  const app = {
+    requestSingleInstanceLock: () => true, setAppUserModelId() {}, on() {},
+    whenReady: () => new Promise(() => {}),
+  };
+  const handlers = new Map(), sender = { send() {} };
+  const electron = { app, ipcMain: { handle: (name, handler) => handlers.set(name, handler) } };
+  const context = vm.createContext({
+    require: (name) => ({ path, electron, './devin': require('../src/main/devin'), './store': { DEFAULT_SETTINGS } })[name] || {},
+    __dirname, settings, credentials, sender, process: { platform: 'test', on() {} },
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8'), context);
+  vm.runInContext('settingsStore = settings; devinStore = credentials; settingsWin = { webContents: sender, isDestroyed: () => false }; registerIpc();', context);
+  return { credentials, invoke: (name, ...args) => handlers.get(name)({ sender }, ...args) };
+}
+
+function requireStore() {
+  const module = { exports: {} };
+  const context = { module, require: (name) => name === 'electron' ? {} : require(name) };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'store.js'), 'utf8'), context);
+  return module.exports;
+}
+
+test('organization-only changes retain the stored encrypted token', () => {
+  const { credentials, invoke } = mainIpc({ encrypted: 'existing-ciphertext', orgId: 'org-old' });
+  const saved = invoke('devin:save', '', ' org-new ');
+  assert.equal(saved.orgId, 'org-new');
+  assert.equal(saved.configured, true);
+  assert.equal(credentials.get().encrypted, 'existing-ciphertext');
+  assert.equal(invoke('devin:save', '', '').error, 'organization');
+  assert.equal(credentials.get().orgId, 'org-new');
+  assert.equal(mainIpc({ encrypted: '', orgId: '' }).invoke('devin:save', '', 'org-new').error, 'invalid');
+});
