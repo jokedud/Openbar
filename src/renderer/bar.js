@@ -2,8 +2,9 @@
 // The dock itself. Each widget renders a node; nodes are only swapped when their markup changes.
 const iconCache = new Map();
 async function iconOf(p) {
-  if (!p || /^[a-z][a-z0-9+.-]+:/i.test(p)) return '';
+  if (!p) return '';
   const k = p.toLowerCase();
+  if (k !== 'ms-settings:' && /^[a-z][a-z0-9+.-]+:/.test(k)) return '';
   if (!iconCache.has(k)) {
     iconCache.set(k, '');
     const fn = /\.(lnk|url|appref-ms)$/i.test(p) ? 'apps:icon' : 'exe:icon';
