@@ -4,7 +4,7 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execFile } = require('child_process');
 
 // ---------- CPU / RAM / disk ----------
 let lastCpu = os.cpus();
@@ -35,11 +35,14 @@ function system() {
 }
 
 // ---------- PowerShell helper (media + network) ----------
+const helperPath = path.join(__dirname, 'helper.ps1').replace('app.asar', 'app.asar.unpacked');
+const helperArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helperPath];
+const mediaActions = new Set(['playpause', 'pause', 'prev', 'next']);
+
 function startHelper(onData) {
-  const script = path.join(__dirname, 'helper.ps1').replace('app.asar', 'app.asar.unpacked');
   let child = null, stopped = false, buf = '';
   const run = () => {
-    child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+    child = spawn('powershell.exe', helperArgs, { windowsHide: true });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (d) => {
       buf += d;
@@ -54,6 +57,13 @@ function startHelper(onData) {
   };
   run();
   return () => { stopped = true; if (child) child.kill(); };
+}
+
+function controlMedia(action) {
+  if (!mediaActions.has(action)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    execFile('powershell.exe', [...helperArgs, '-MediaAction', action], { windowsHide: true, timeout: 10000 }, (err) => resolve(!err));
+  });
 }
 
 // ---------- HTTP helpers ----------
@@ -137,4 +147,4 @@ function runCommand(cmd) {
   });
 }
 
-module.exports = { system, disk, startHelper, weather, github, crypto, runCommand, getJson };
+module.exports = { system, disk, startHelper, controlMedia, weather, github, crypto, runCommand, getJson };
