@@ -122,7 +122,6 @@ function createSurfaceWindow(options) {
   win.on('show', () => syncBackdrop(win));
   win.on('hide', () => backdrop.hide());
   win.once('closed', () => { if (!backdrop.isDestroyed()) backdrop.destroy(); });
-  win.setIgnoreMouseEvents(true, { forward: true });
   return win;
 }
 
@@ -678,9 +677,9 @@ function registerIpc() {
     backdrop.surface = { x, y, width, height, radius };
     syncBackdrop(win);
   });
-  ipcMain.on('surface:mouse', (e, inside) => {
+  ipcMain.on('surface:mouse', (e, overPadding) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    if (backdrops.has(win)) win.setIgnoreMouseEvents(inside !== true, { forward: true });
+    if (backdrops.has(win)) win.setIgnoreMouseEvents(overPadding === true, { forward: true });
   });
   ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));

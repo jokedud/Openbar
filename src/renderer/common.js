@@ -42,19 +42,22 @@ function observeSurface(surface) {
   resize.observe(document.body);
   new MutationObserver(reportBounds).observe(surface, { attributes: true, attributeFilter: ['data-widget'] });
 
-  let inside;
-  function reportMouse(next) {
-    if (inside === next) return;
-    inside = next;
-    api.send('surface:mouse', inside);
+  let overPadding = false;
+  function setOverPadding(next) {
+    if (overPadding === next) return;
+    overPadding = next;
+    api.send('surface:mouse', overPadding);
   }
   function checkMouse(e) {
-    if (!e.buttons) reportMouse(surface.contains(document.elementFromPoint(e.clientX, e.clientY)));
+    if (e.buttons || e.sourceCapabilities?.firesTouchEvents) return;
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    setOverPadding(hit !== null && !surface.contains(hit));
   }
   document.addEventListener('mousemove', checkMouse);
   document.addEventListener('mouseup', checkMouse);
   document.addEventListener('dragend', checkMouse);
-  document.documentElement.addEventListener('mouseleave', (e) => { if (!e.buttons) reportMouse(false); });
+  document.documentElement.addEventListener('mouseleave', (e) => { if (!e.buttons) setOverPadding(false); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) setOverPadding(false); });
 }
 
 // ---------- DOM ----------
