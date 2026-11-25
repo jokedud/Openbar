@@ -401,9 +401,11 @@ function createBar() {
     if (!cleanedUp && isWin && D().taskbarRestore) app.quit();
   });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
+  bar.on('show', () => companion?.setDockVisible(true));
+  bar.on('hide', () => companion?.setDockVisible(false));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
   if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(barHwnd); nativeTheme.on('updated', refreshGlass); }
-  bar.on('closed', () => { bar = null; });
+  bar.on('closed', () => { bar = null; companion?.setDockVisible(false); });
 }
 
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };

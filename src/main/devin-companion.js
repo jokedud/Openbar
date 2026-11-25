@@ -10,6 +10,7 @@ class DevinCompanion {
     this.cloud = [];
     this.cloudAt = 0;
     this.revision = 0;
+    this.dockVisible = false;
   }
 
   configure(settings, dock, credentialsChanged = false) {
@@ -67,7 +68,7 @@ class DevinCompanion {
   }
 
   present() {
-    if (!this.dock) return;
+    if (!this.dock || !this.dockVisible) return;
     const working = !!this.activity && (this.cursor || this.otter);
     if (!this.window && !this.otter && !(this.cursor && working)) return;
     const display = screen.getPrimaryDisplay();
@@ -108,11 +109,23 @@ class DevinCompanion {
     window.setAlwaysOnTop(true, 'screen-saver');
     window.webContents.on('did-finish-load', () => {
       this.ready = true;
-      window.webContents.send('devin:motion', this.payload);
-      if (this.otter || (this.cursor && this.payload.working)) window.showInactive();
+      this.key = null;
+      this.present();
     });
     window.on('closed', () => { this.window = null; this.ready = false; this.key = null; });
     window.loadFile(path.join(__dirname, '..', 'renderer', 'devin-overlay.html'));
+  }
+
+  setDockVisible(visible) {
+    if (this.dockVisible === visible) return;
+    this.dockVisible = visible;
+    if (visible) {
+      this.key = null;
+      this.present();
+    } else {
+      if (this.ready) this.window.webContents.send('devin:motion-pause');
+      this.window?.hide();
+    }
   }
 
   hideIfIdle(sender) {

@@ -111,6 +111,17 @@ function drawOtter() {
   else signalIdle();
 }
 
+api.on('devin:motion-pause', () => {
+  cancelAnimationFrame(animation);
+  clearTimeout(tick);
+  animation = 0;
+  tick = 0;
+  data = null;
+  phase = 'off';
+  lostAt = -Infinity;
+  cursor.hidden = true;
+});
+
 api.on('devin:motion', (next) => {
   const prior = data;
   data = next;
