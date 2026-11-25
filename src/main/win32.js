@@ -10,6 +10,15 @@ const gdi32 = koffi.load('gdi32.dll');
 const advapi32 = koffi.load('advapi32.dll');
 
 const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
+const SIZE = koffi.struct('SIZE', { cx: 'long', cy: 'long' });
+const DWM_THUMBNAIL_PROPERTIES = (koffi.pack || koffi.struct)('DWM_THUMBNAIL_PROPERTIES', {
+  dwFlags: 'uint32',
+  rcDestination: RECT,
+  rcSource: RECT,
+  opacity: 'uint8',
+  fVisible: 'int',
+  fSourceClientAreaOnly: 'int',
+});
 const APPBARDATA = koffi.struct('APPBARDATA', {
   cbSize: 'uint32',
   hWnd: 'intptr_t',
@@ -25,6 +34,7 @@ const EnumWindows = user32.func('bool __stdcall EnumWindows(EnumWindowsProc *cb,
 const IsWindowVisible = user32.func('bool __stdcall IsWindowVisible(intptr_t hWnd)');
 const IsWindow = user32.func('bool __stdcall IsWindow(intptr_t hWnd)');
 const IsIconic = user32.func('bool __stdcall IsIconic(intptr_t hWnd)');
+const IsZoomed = user32.func('bool __stdcall IsZoomed(intptr_t hWnd)');
 const GetWindowTextW = user32.func('int __stdcall GetWindowTextW(intptr_t hWnd, _Out_ uint8_t *buf, int max)');
 const GetWindowTextLengthW = user32.func('int __stdcall GetWindowTextLengthW(intptr_t hWnd)');
 const GetWindowLongPtrW = user32.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t hWnd, int idx)');
@@ -48,6 +58,10 @@ const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProces
 
 const SHAppBarMessage = shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32_t msg, _Inout_ APPBARDATA *data)');
 const DwmGetWindowAttribute = dwmapi.func('long __stdcall DwmGetWindowAttribute(intptr_t hWnd, uint32_t attr, _Out_ uint32_t *val, uint32_t size)');
+const DwmRegisterThumbnail = dwmapi.func('long __stdcall DwmRegisterThumbnail(intptr_t dest, intptr_t src, _Out_ intptr_t *id)');
+const DwmUnregisterThumbnail = dwmapi.func('long __stdcall DwmUnregisterThumbnail(intptr_t id)');
+const DwmQueryThumbnailSourceSize = dwmapi.func('long __stdcall DwmQueryThumbnailSourceSize(intptr_t id, _Out_ SIZE *size)');
+const DwmUpdateThumbnailProperties = dwmapi.func('long __stdcall DwmUpdateThumbnailProperties(intptr_t id, DWM_THUMBNAIL_PROPERTIES *props)');
 const RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t key, const char16_t *subKey, const char16_t *value, uint32_t flags, void *type, void *data, _Out_ uint32_t *size)');
 
 // Native glass: an accent blur behind the window, clipped to a rounded region.
@@ -64,7 +78,11 @@ const WS_EX_NOACTIVATE = 0x8000000;
 const GW_OWNER = 4;
 const DWMWA_CLOAKED = 14;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
-const SW_HIDE = 0, SW_SHOWNA = 8, SW_RESTORE = 9, SW_MINIMIZE = 6, SW_SHOW = 5;
+const SW_HIDE = 0, SW_MAXIMIZE = 3, SW_SHOWNA = 8, SW_RESTORE = 9, SW_MINIMIZE = 6, SW_SHOW = 5;
+const DWM_TNP_RECTDESTINATION = 0x1;
+const DWM_TNP_OPACITY = 0x4;
+const DWM_TNP_VISIBLE = 0x8;
+const DWM_TNP_SOURCECLIENTAREAONLY = 0x10;
 const WM_CLOSE = 0x10;
 const HKEY_CURRENT_USER = -0x7fffffff;
 const RRF_RT_ANY = 0xffff;
@@ -135,7 +153,7 @@ function listTaskbarWindows(excludePids = new Set()) {
       if (IGNORED_CLASSES.has(cls)) return true;
       const pid = processId(hwnd);
       if (excludePids.has(pid)) return true;
-      out.push({ hwnd: Number(hwnd), title, pid, cls, minimized: IsIconic(hwnd) });
+      out.push({ hwnd: Number(hwnd), title, pid, cls, minimized: IsIconic(hwnd), maximized: typeof IsZoomed === 'function' ? IsZoomed(hwnd) : false });
     } catch (_) { /* keep enumerating */ }
     return true;
   }, 0);
@@ -152,7 +170,42 @@ function focusWindow(hwnd) {
 }
 
 function minimizeWindow(hwnd) { return ShowWindow(hwnd, SW_MINIMIZE); }
+function maximizeWindow(hwnd) { return ShowWindow(hwnd, SW_MAXIMIZE); }
+function restoreWindow(hwnd) { return ShowWindow(hwnd, SW_RESTORE); }
+function isWindowMaximized(hwnd) { return typeof IsZoomed === 'function' ? IsZoomed(hwnd) : false; }
 function closeWindow(hwnd) { return PostMessageW(hwnd, WM_CLOSE, 0, 0); }
+
+// ---- DWM live window thumbnails ----
+function registerThumbnail(destHwnd, srcHwnd) {
+  if (!destHwnd || !srcHwnd) return 0;
+  const id = [0];
+  return DwmRegisterThumbnail(destHwnd, srcHwnd, id) === 0 ? Number(id[0]) : 0;
+}
+
+function unregisterThumbnail(thumbId) {
+  if (!thumbId) return false;
+  return DwmUnregisterThumbnail(thumbId) === 0;
+}
+
+function queryThumbnailSourceSize(thumbId) {
+  if (!thumbId) return null;
+  const size = { cx: 0, cy: 0 };
+  if (DwmQueryThumbnailSourceSize(thumbId, size) !== 0 || size.cx <= 0 || size.cy <= 0) return null;
+  return { width: size.cx, height: size.cy };
+}
+
+function updateThumbnail(thumbId, { left, top, right, bottom, opacity = 255, visible = true, clientAreaOnly = false }) {
+  if (!thumbId) return false;
+  const props = {
+    dwFlags: DWM_TNP_RECTDESTINATION | DWM_TNP_OPACITY | DWM_TNP_VISIBLE | DWM_TNP_SOURCECLIENTAREAONLY,
+    rcDestination: { left: Math.round(left), top: Math.round(top), right: Math.round(right), bottom: Math.round(bottom) },
+    rcSource: { left: 0, top: 0, right: 0, bottom: 0 },
+    opacity: Math.max(0, Math.min(255, Math.round(opacity))),
+    fVisible: visible ? 1 : 0,
+    fSourceClientAreaOnly: clientAreaOnly ? 1 : 0,
+  };
+  return DwmUpdateThumbnailProperties(thumbId, props) === 0;
+}
 function foregroundWindow() { return Number(GetForegroundWindow()); }
 function foregroundWindowBounds(excludePid) {
   const hwnd = foregroundWindow();
@@ -264,7 +317,9 @@ function setRoundRegion(hWnd, { width, height, radius }) {
 }
 
 module.exports = {
-  listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, foregroundWindowBounds, IsWindow: (h) => IsWindow(h),
+  listTaskbarWindows, focusWindow, minimizeWindow, maximizeWindow, restoreWindow, isWindowMaximized, closeWindow,
+  registerThumbnail, unregisterThumbnail, queryThumbnailSourceSize, updateThumbnail,
+  foregroundWindow, foregroundWindowBounds, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,

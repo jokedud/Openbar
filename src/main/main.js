@@ -15,6 +15,7 @@ const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth'
 const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 const { createBattery, openPowerSettings } = require('./battery');
+const { WindowPreviewController } = require('./window-preview');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -41,7 +42,7 @@ function refreshVolume(change) {
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 
-let settingsStore, dataStore, devinStore, taskbarRecovery, companion;
+let settingsStore, dataStore, devinStore, taskbarRecovery, companion, windowPreview;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
@@ -59,7 +60,7 @@ const S = () => settingsStore.get();
 const D = () => dataStore.get();
 
 function broadcast(channel, payload) {
-  for (const w of [bar, panel, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
+  for (const w of [bar, panel, settingsWin, windowPreview?.win]) if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
 }
 
 // ---------------- geometry ----------------
@@ -131,10 +132,13 @@ function refreshGlass() {
   glassMode = backdrop ? applyBackdrop(backdrop.hwnd, transparencyEnabled() ? 'blur' : 'off') : 'off';
   const panelBackdrop = backdrops.get(panel);
   if (panelBackdrop) applyBackdrop(panelBackdrop.hwnd, glassMode);
+  const previewBackdrop = windowPreview?.win && backdrops.get(windowPreview.win);
+  if (previewBackdrop) applyBackdrop(previewBackdrop.hwnd, glassMode);
   state.glass = glassMode;
   broadcast('state', { glass: glassMode });
   syncBackdrop(bar);
   syncBackdrop(panel);
+  if (windowPreview?.win) syncBackdrop(windowPreview.win);
 }
 
 function createSurfaceWindow(options) {
@@ -306,12 +310,13 @@ async function pollWindows() {
   const appKeys = new Set(list.map((w) => (w.path || w.exe).toLowerCase()));
   const windowAppOrder = state.windowAppOrder.filter((key) => appKeys.delete(key)).concat([...appKeys]);
   list.sort((a, b) => rank(a) - rank(b));
-  const sig = JSON.stringify([list.map((w) => [w.hwnd, w.title, w.minimized]), active, recentHwnds, windowAppOrder]);
+  const sig = JSON.stringify([list.map((w) => [w.hwnd, w.title, w.minimized, w.maximized]), active, recentHwnds, windowAppOrder]);
   if (sig !== pollWindows.sig) {
     pollWindows.sig = sig;
     const windowState = { windows: list, activeHwnd: active, recentHwnds, windowAppOrder };
     Object.assign(state, windowState);
     broadcast('state', windowState);
+    windowPreview?.syncWindows();
   }
 }
 
@@ -508,6 +513,7 @@ PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
 
 function togglePanel(widget, anchorX) {
+  windowPreview?.hide();
   if (panelWidget === 'battery') stopBatteryEstimate();
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
   const power = widget === 'battery' ? batteryNative?.read() : null;
@@ -559,6 +565,7 @@ function fitDevinPanel(e, contentHeight) {
 }
 
 function openSettings(tab) {
+  windowPreview?.hide();
   if (panelWidget === 'bluetooth' || panelWidget === 'battery') { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
@@ -814,6 +821,22 @@ function registerIpc() {
   ipcMain.handle('quit', () => app.quit());
 }
 
+function registerPreviewIpc() {
+  ipcMain.on('preview:hover', (e, payload) => {
+    if (e.sender !== bar?.webContents || !payload || !bar || bar.isDestroyed()) return;
+    if (panel?.isVisible()) return;
+    const viewport = bar.getBounds();
+    windowPreview?.hoverDock({ ...payload, anchorX: viewport.x + (Number(payload.anchorX) || viewport.width / 2) });
+  });
+  ipcMain.on('preview:leave-dock', (e) => { if (e.sender === bar?.webContents) windowPreview?.leaveDock(); });
+  ipcMain.on('preview:dismiss', (e) => { if (e.sender === bar?.webContents) windowPreview?.hide(); });
+  ipcMain.on('preview:enter-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.enterSurface(); });
+  ipcMain.on('preview:leave-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.leaveSurface(); });
+  ipcMain.on('preview:slots', (e, slots) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.updateThumbnailSlots(slots); });
+  ipcMain.handle('preview:action', (e, hwnd, action) => (windowPreview?.webContentsMatches(e.sender) ? windowPreview.performAction(hwnd, action) : false));
+  ipcMain.handle('preview:context-menu', (e, hwnd) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.openContextMenu(hwnd); });
+}
+
 // ---------------- lifecycle ----------------
 const stoppers = [];
 app.on('second-instance', () => openSettings());
@@ -838,6 +861,20 @@ app.whenReady().then(() => {
     taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
     batteryNative = createBattery();
   }
+  windowPreview = new WindowPreviewController({
+    createSurfaceWindow,
+    syncBackdrop,
+    getBarBounds: () => (bar && !bar.isDestroyed() ? padBounds(bar.getBounds(), -barShadowPadding()) : null),
+    getSettings: S,
+    getState: () => state,
+    win32,
+    isWin,
+    preload: PRELOAD,
+    rendererDir: RENDERER,
+    iconPath: ICON,
+    shadowPadding: SHADOW_PADDING,
+    onPollWindows: pollWindows,
+  });
   const firstRun = !require('fs').existsSync(settingsStore.file);
   migrateBluetoothLayout();
   const volumeMigration = volumeLayoutMigration(S());
@@ -853,9 +890,11 @@ app.whenReady().then(() => {
   registerBrightnessIpc(ipcMain, shell, (e) =>
     panelWidget === 'brightness' && panel && !panel.isDestroyed() && e.sender === panel.webContents, isWin);
   registerIpc();
+  registerPreviewIpc();
   if (companion) ipcMain.on('devin:motion-idle', (e) => companion.hideIfIdle(e.sender));
   if (isWin) registerSurfaceIpc();
   createBar();
+  bar.on('hide', () => windowPreview?.hide());
   createTray();
   applyTaskbar();
 
@@ -875,6 +914,7 @@ app.whenReady().then(() => {
   ];
   stoppers.push(() => timers.forEach(clearInterval));
   stoppers.push(() => companion?.stop());
+  stoppers.push(() => windowPreview?.destroy());
   scheduleCommands();
   if (isWin) stoppers.push(sources.startHelper(onHelper));
 
