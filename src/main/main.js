@@ -95,7 +95,7 @@ function enableGlass(hwnd) {
 // Windows broadcasts a theme change when "Transparency effects" is toggled.
 function refreshGlass() {
   enableGlass(barHwnd);
-  if (panel && !panel.isDestroyed() && panelHwnd) setBackdrop(panelHwnd, glassMode === 'off' ? 'off' : 'acrylic');
+  if (panel && !panel.isDestroyed() && panelHwnd) setBackdrop(panelHwnd, glassMode);
   layoutBar();
 }
 // Windows applies a resize lazily, so callers pass the size they just set instead of reading it back.
@@ -389,7 +389,7 @@ function togglePanel(widget, anchorX) {
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
     panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
-    if (panelHwnd) setBackdrop(panelHwnd, glassMode === 'off' ? 'off' : 'acrylic');
+    if (panelHwnd) setBackdrop(panelHwnd, glassMode);
     clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {

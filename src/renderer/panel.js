@@ -287,7 +287,9 @@ async function draw(force) {
   const body = h('div');
   const fn = P[widget];
   if (fn) await fn(body); else setHead(widget);
+  const scrolled = force === 'switch' ? [] : [...$('body').querySelectorAll('.hours')].map((el) => el.scrollLeft);
   $('body').replaceChildren(...body.childNodes);
+  $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
   draw(true).then(animateIn);

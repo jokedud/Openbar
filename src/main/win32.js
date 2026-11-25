@@ -221,18 +221,18 @@ function hwndFromBuffer(buf) {
 }
 
 
-const ACCENT = { off: 0, blur: 3, acrylic: 4 };
+const ACCENT_ENABLE_BLURBEHIND = 3;
 const WCA_ACCENT_POLICY = 19;
 let accentBuf = null;
-// Blurs whatever is behind hWnd. Acrylic needs Windows 10 1803+; older builds get the plain blur.
-// The tint stays in CSS, so the accent colour is only the near-transparent minimum acrylic accepts.
+// Blurs whatever is behind hWnd ('blur') or removes the blur ('off'); returns the mode Windows accepted.
+// Plain blur rather than acrylic: it follows the window region, so rounded windows get no square corners.
+// The tint stays in CSS, so the accent colour is near-transparent.
 function setBackdrop(hWnd, mode) {
-  const build = Number(require('os').release().split('.')[2]) || 0;
-  const state = mode === 'off' ? ACCENT.off : mode === 'acrylic' && build >= 17134 ? ACCENT.acrylic : ACCENT.blur;
+  const state = mode === 'off' ? 0 : ACCENT_ENABLE_BLURBEHIND;
   accentBuf = accentBuf || koffi.alloc(ACCENT_POLICY, 1);
   koffi.encode(accentBuf, ACCENT_POLICY, { state, flags: 0, color: 0x01000000, animation: 0 });
   const ok = SetWindowCompositionAttribute(hWnd, { attribute: WCA_ACCENT_POLICY, data: accentBuf, size: koffi.sizeof(ACCENT_POLICY) });
-  return ok ? (state === ACCENT.acrylic ? 'acrylic' : state === ACCENT.blur ? 'blur' : 'off') : 'off';
+  return ok && state ? 'blur' : 'off';
 }
 // Clips the window (and so its blur) to a rounded rectangle, in physical pixels; null removes the clip.
 function setRoundRegion(hWnd, r) {

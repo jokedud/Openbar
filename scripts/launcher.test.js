@@ -12,6 +12,7 @@ test('the launcher renders cached apps into its new grid on reopen', async () =>
     append(...children) { this.children.push(...children); },
     replaceChildren(...children) { this.children = children; },
     querySelector: () => null,
+    querySelectorAll: () => [],
     addEventListener() {},
   });
   const body = element();
