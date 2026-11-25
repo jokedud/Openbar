@@ -91,6 +91,8 @@ const ICONS = {
   bluetooth: '<path d="m6 6 12 12-6 4V2l6 4L6 18"/>',
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  speaker: '<path d="M3 9h4l5-4v14l-5-4H3z"/><path class="volume-waves" d="M15 9a4.5 4.5 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/><path class="volume-cross" d="m16 10 5 4m0-4-5 4" opacity="0"/>',
+  'speaker-off': '<path d="M3 9h4l5-4v14l-5-4H3zM16 10l5 4m0-4-5 4"/>',
   play: '<path d="M7 4v16l13-8z" fill="currentColor"/>',
   pause: '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>',
   next: '<path d="M5 4v16l10-8zM19 5v14"/>',
