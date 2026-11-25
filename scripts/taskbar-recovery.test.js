@@ -9,6 +9,7 @@ const { runInNewContext } = require('node:vm');
 
 const launch = mock.method(require('node:child_process'), 'execFile', () => {});
 const TaskbarRecovery = require('../src/main/taskbar-recovery');
+const { warmPowerShell } = require('./warm-powershell');
 const mainPath = path.join(__dirname, '../src/main/main.js');
 
 function loadTaskbar(recovery, dataStore, win32) {
@@ -80,6 +81,7 @@ test('migration commits the legacy baseline before replacing the old restore rec
 });
 
 test('the recovery worker discards a prepared journal without restoring Windows settings', { skip: process.platform !== 'win32' }, (t) => {
+  warmPowerShell();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'openbar-recovery-'));
   t.after(() => fs.rmSync(profile, { recursive: true, force: true }));
   const recovery = new TaskbarRecovery(profile);

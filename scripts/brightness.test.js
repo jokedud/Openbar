@@ -7,6 +7,7 @@ const { promisify } = require('node:util');
 const { test } = require('node:test');
 const vm = require('node:vm');
 const { registerBrightnessIpc, runBrightness } = require('../src/main/brightness');
+const { warmPowerShell } = require('./warm-powershell');
 
 test('brightness accepts only valid readings and keeps zero distinct from unavailable', async () => {
   assert.deepEqual(await runBrightness(undefined, async () => ({ stdout: '{"level":0,"levels":[25,-1,0,25,"50"]}' })),
@@ -72,6 +73,7 @@ test('separate arrow presses advance through coarse hardware brightness levels',
 
 test('Windows brightness pairs active WMI instances and returns hardware readback, not the requested number',
   { skip: process.platform !== 'win32' }, async () => {
+    warmPowerShell();
     const exec = promisify(execFile);
     const fixture = (returnValue) => async (file, args, options) => {
       const prefix = `
@@ -93,9 +95,7 @@ function Invoke-CimMethod($InputObject, $MethodName, $Arguments) {
 }
 `;
       const command = prefix + Buffer.from(args.at(-1), 'base64').toString('utf16le');
-      // Cold PowerShell startup on hosted runners can exceed the interactive probe's timeout.
-      return exec(file, [...args.slice(0, -1), Buffer.from(command, 'utf16le').toString('base64')],
-        { ...options, timeout: 15000 });
+      return exec(file, [...args.slice(0, -1), Buffer.from(command, 'utf16le').toString('base64')], options);
     };
     const levels = [0, 20, 75, 100];
     assert.deepEqual(await runBrightness(undefined, fixture(0)), { level: 20, levels, failed: false });
