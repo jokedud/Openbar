@@ -32,7 +32,7 @@ async function fetchCalendar(cal) {
       for (const d of dates) {
         if (excluded.has(+d)) continue;
         const rec = ev.recurrences || {};
-        const override = allDay ? rec[d.toISOString().slice(0, 10)] : rec[d.toISOString()];
+        const override = allDay ? rec[localDateKey(d)] : rec[d.toISOString()];
         if (override && override.status === 'CANCELLED') continue;
         push(d, override || ev);
       }
@@ -44,6 +44,11 @@ async function fetchCalendar(cal) {
 }
 
 const MEETING_HOST = /(^|\.)(zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com)$/i;
+
+// node-ical keys all-day overrides by the local calendar date.
+function localDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function findMeetingUrl(ev) {
   const hay = [ev.location, ev.description, ev.url && (ev.url.val || ev.url)].filter(Boolean).join(' ');
