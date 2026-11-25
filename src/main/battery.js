@@ -8,7 +8,9 @@ const MODES = new Map([
   ['balanced', guid('00000000-0000-0000-0000-000000000000')],
   ['performance', guid('ded574b5-45a0-4f42-8737-46345c09c238')],
 ]);
-const BALANCED_PLAN = guid('381b4222-f694-41f0-9685-ff5bb260df2e');
+const BALANCED_PERSONALITY = guid('381b4222-f694-41f0-9685-ff5bb260df2e');
+const SCHEME_PERSONALITY = guid('245d8541-3943-4422-b025-13a784f679b7');
+const REG_BINARY = 3;
 const ENERGY_SAVER_STATUS = guid('550e8400-e29b-41d4-a716-446655440000');
 const WM_POWERBROADCAST = 0x0218;
 const PBT_POWERSETTINGCHANGE = 0x8013;
@@ -83,13 +85,14 @@ function createBattery() {
   const getStatus = kernel.func('int __stdcall GetSystemPowerStatus(_Out_ uint8_t *status)');
   const build = Number(release().split('.')[2]);
   let energySaver;
-  let getActual, setActive, getPlan, free;
+  let getActual, setActive, getPlan, readPlanValue, free;
   if (build >= 22000) {
     try {
       const power = koffi.load('powrprof.dll');
       getActual = power.func('uint32 __stdcall PowerGetActualOverlayScheme(_Out_ uint8_t *guid)');
       setActive = power.func('uint32 __stdcall PowerSetActiveOverlayScheme(const uint8_t *guid)');
       getPlan = power.func('uint32 __stdcall PowerGetActiveScheme(void *root, _Out_ void **guid)');
+      readPlanValue = power.func('uint32 __stdcall PowerReadACValue(void *root, const void *scheme, const void *subgroup, const uint8_t *setting, _Out_ uint32 *type, _Out_ uint8_t *value, _Inout_ uint32 *size)');
       free = kernel.func('void * __stdcall LocalFree(void *ptr)');
     } catch { /* Overlay APIs aren't exported on every Windows installation. */ }
   }
@@ -127,11 +130,13 @@ function createBattery() {
   }
 
   function mode() {
-    if (!getActual || !setActive || !getPlan || !free) return null;
+    if (!getActual || !setActive || !getPlan || !readPlanValue || !free) return null;
     const plan = [null];
     if (getPlan(null, plan) !== 0 || !plan[0]) return null;
     try {
-      if (!Buffer.from(koffi.decode(plan[0], 'uint8_t', 16)).equals(BALANCED_PLAN)) return null;
+      const personality = Buffer.alloc(16), type = [0], size = [personality.length];
+      if (readPlanValue(null, plan[0], null, SCHEME_PERSONALITY, type, personality, size) !== 0 ||
+          type[0] !== REG_BINARY || size[0] !== personality.length || !personality.equals(BALANCED_PERSONALITY)) return null;
     } finally { free(plan[0]); }
     const actual = Buffer.alloc(16);
     if (getActual(actual) !== 0) return null;

@@ -59,6 +59,7 @@ test('Windows 11 Energy Saver notifications override a legacy Off flag and block
     PowerGetActualOverlayScheme: () => 0,
     PowerSetActiveOverlayScheme: () => { writes++; return 0; },
     PowerGetActiveScheme: (_root, out) => { out[0] = Buffer.from('22421b3894f6f0419685ff5bb260df2e', 'hex'); return 0; },
+    PowerReadACValue: (_root, scheme, _subgroup, _setting, type, value) => { type[0] = 3; scheme.copy(value); return 0; },
     LocalFree() {},
   });
   const stop = battery.watchSaver({
@@ -84,6 +85,39 @@ test('Windows 11 Energy Saver notifications override a legacy Off flag and block
   assert.equal(changes, 2);
   stop();
   assert.equal(notify, null);
+});
+
+test('overlay changes follow the power plan personality, not its instance GUID', () => {
+  const customPlan = Buffer.from('32e2f5419c673f4690e50f7e00c423fd', 'hex');
+  const balanced = Buffer.from('22421b3894f6f0419685ff5bb260df2e', 'hex');
+  const highPerformance = Buffer.from('da7f5e8cbfe8964a9a85a6e23a8c635c', 'hex');
+  const personalitySetting = Buffer.from('41855d2443392244b02513a784f679b7', 'hex');
+  let personality = balanced, overlay = Buffer.alloc(16), reads = 0, freed = 0, writes = 0;
+  const battery = windowsBattery(26100, {
+    GetSystemPowerStatus: (raw) => { raw.set([1, 128, 255, 0]); return 1; },
+    PowerGetActiveScheme: (_root, out) => { out[0] = customPlan; return 0; },
+    PowerReadACValue: (_root, scheme, subgroup, setting, type, value, size) => {
+      assert.equal(scheme, customPlan);
+      assert.equal(subgroup, null);
+      assert.deepEqual(setting, personalitySetting);
+      assert.equal(size[0], 16);
+      type[0] = 3;
+      personality.copy(value);
+      reads++;
+      return 0;
+    },
+    LocalFree: () => { freed++; },
+    PowerGetActualOverlayScheme: (out) => { overlay.copy(out); return 0; },
+    PowerSetActiveOverlayScheme: (next) => { overlay = Buffer.from(next); writes++; return 0; },
+  });
+  assert.equal(battery.mode(), 'balanced');
+  assert.equal(battery.setMode('performance'), true);
+  assert.equal(battery.mode(), 'performance');
+  personality = highPerformance;
+  assert.equal(battery.mode(), null);
+  assert.equal(battery.setMode('balanced'), false);
+  assert.equal(writes, 1);
+  assert.equal(freed, reads);
 });
 
 test('time to full requires a charging report with current capacity and a positive charging rate', () => {
