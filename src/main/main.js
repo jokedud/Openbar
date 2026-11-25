@@ -11,10 +11,30 @@ const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
 const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth');
+const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
+const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
 const APP_ID = 'xyz.openbar.app';
+let readVolume;
+
+function refreshVolume(change) {
+  let next = VOLUME_UNAVAILABLE;
+  if (isWin) {
+    try {
+      readVolume ||= createVolume(require('koffi'));
+      next = readVolume(change);
+    } catch (_) { /* Core Audio unavailable */ }
+  }
+  const prev = state.volume;
+  if (prev?.status !== next.status || prev.volume !== next.volume || prev.muted !== next.muted) {
+    state.volume = next;
+    if (bar && !bar.isDestroyed()) bar.webContents.send('state', { volume: next });
+    if (panelWidget === 'volume' && panel?.isVisible()) panel.webContents.send('state', { volume: next });
+  }
+  return next;
+}
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
@@ -457,6 +477,7 @@ function createBar() {
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [356, 250], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
+PANEL_SIZES.volume = [324, 232];
 
 function togglePanel(widget, anchorX) {
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
@@ -480,6 +501,7 @@ function togglePanel(widget, anchorX) {
     });
     panel.setAlwaysOnTop(true, 'screen-saver');
     panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
+    panel.on('hide', () => { if (panelWidget === 'volume') panel.webContents.send('volume:hidden'); });
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
@@ -650,6 +672,12 @@ function registerDevinIpc() {
 function registerIpc() {
   registerDevinIpc();
   registerBluetoothIpc(ipcMain, shell, (e) => panelWidget === 'bluetooth' && e.sender === panel?.webContents);
+  ipcMain.handle('volume:read', (e) => panelWidget === 'volume' && e.sender === panel?.webContents ? refreshVolume() : VOLUME_UNAVAILABLE);
+  ipcMain.handle('volume:change', (e, action, value) => {
+    const change = volumeChange(action, value);
+    if (!change || panelWidget !== 'volume' || !panel?.isVisible() || e.sender !== panel.webContents) return VOLUME_UNAVAILABLE;
+    return refreshVolume(change);
+  });
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
   ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); migrateBluetoothLayout(); applySettings(prev); return S(); });
@@ -750,6 +778,8 @@ app.whenReady().then(() => {
   if (isWin) taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
   const firstRun = !require('fs').existsSync(settingsStore.file);
   migrateBluetoothLayout();
+  const volumeMigration = volumeLayoutMigration(S());
+  if (volumeMigration) settingsStore.set(volumeMigration);
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
       { name: 'File Explorer', path: path.join(process.env.SystemRoot || 'C:/Windows', 'explorer.exe') },
@@ -768,6 +798,9 @@ app.whenReady().then(() => {
 
   const timers = [
     every(1000, pollWindows),
+    every(1000, () => {
+      if (panelWidget === 'volume' || hasVolumeWidget(S())) refreshVolume();
+    }),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
     every(3000, applyTaskbar),
     every(60 * 1000, refreshers.disk),
