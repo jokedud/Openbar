@@ -1,7 +1,9 @@
 'use strict';
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor, safeStorage } = require('electron');
+const { stat } = require('fs/promises');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor, safeStorage } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
+const { shortcutTarget } = require('./custom-tabs');
 const TaskbarRecovery = require('./taskbar-recovery');
 const sources = require('./sources');
 const calendar = require('./calendar');
@@ -591,6 +593,25 @@ function registerIpc() {
     setTimeout(pollWindows, 120);
   });
   ipcMain.handle('launch', (_e, item) => launch(item));
+  ipcMain.handle('tabs:target', (_e, kind, value) => shortcutTarget(kind, value));
+  ipcMain.handle('tabs:browse', async (e, kind) => {
+    if (kind !== 'app' && kind !== 'folder') return null;
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), kind === 'folder'
+      ? { title: 'Choose a folder', properties: ['openDirectory'] }
+      : { title: 'Choose an app', properties: ['openFile', 'noResolveAliases'], filters: [{ name: 'Apps', extensions: ['exe', 'lnk', 'appref-ms'] }] });
+    return result.canceled ? null : result.filePaths[0];
+  });
+  ipcMain.handle('tabs:open', async (e, tabId, itemId) => {
+    const item = S().customTabs.find((t) => t.id === tabId)?.items.find((i) => i.id === itemId);
+    if (!item || item.kind === 'widget') return;
+    let detail;
+    try {
+      if (item.kind === 'website') await shell.openExternal(item.target);
+      else if (item.kind === 'folder' && !(await stat(item.target)).isDirectory()) detail = 'The target is not a folder.';
+      else detail = await shell.openPath(item.target);
+    } catch (error) { detail = error.message; }
+    if (detail) await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender), { type: 'error', message: 'Could not open this shortcut', detail });
+  });
   ipcMain.handle('apps:list', (_e, force) => startmenu.listApps(force));
   ipcMain.handle('apps:icon', (_e, file) => startmenu.iconFor(file));
   ipcMain.handle('exe:icon', (_e, file) => exeIcon(file));

@@ -1,6 +1,6 @@
 'use strict';
 const TABS = [
-  ['welcome', 'Welcome', 'grid'], ['general', 'Appearance', 'desktop'], ['widgets', 'Widgets', 'grid'], ['apps', 'Pinned apps', 'pin'],
+  ['welcome', 'Welcome', 'grid'], ['general', 'Appearance', 'desktop'], ['widgets', 'Widgets', 'grid'], ['custom-tabs', 'Custom tabs', 'grid'], ['apps', 'Pinned apps', 'pin'],
   ['calendar', 'Calendar', 'calendar'], ['weather', 'Weather', 'sun'], ['clocks', 'World clocks', 'globe'], ['integrations', 'GitHub & crypto', 'github'],
   ['devin', 'Devin', 'devin'],
   ['commands', 'Command widgets', 'terminal'], ['automations', 'Automations', 'bolt'], ['focus', 'Focus timer', 'timer'], ['about', 'Backup & about', 'note'],
@@ -38,6 +38,7 @@ const sel = (opts, cur, set) => { const s = h('select', {}, ...opts.map(([v, l])
 const deepSet = (key, patch) => save({ [key]: Object.assign({}, S()[key], patch) });
 
 const T = {};
+T['custom-tabs'] = drawCustomTabs;
 T.welcome = (m) => {
   m.append(h('h1', {}, 'Welcome to OpenBar'), h('p', { class: 'lead' }, 'A free, open-source smart dock for Windows 10/11. It replaces the taskbar with your pinned and running apps plus live widgets: meetings, weather, system stats, music, focus timer, to-dos and more. Everything stays on this PC.'));
   m.append(h('h2', {}, 'Quick setup'));

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
+const { createRequire } = require('node:module');
 const vm = require('node:vm');
 const { listSessions, sessionUrl } = require('../src/main/devin');
 
@@ -132,8 +133,10 @@ function mainIpc(initialConfig, storedToken = 'cog_test') {
 
 function requireStore() {
   const module = { exports: {} };
-  const context = { module, require: (name) => name === 'electron' ? {} : require(name) };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'store.js'), 'utf8'), context);
+  const filename = path.join(__dirname, '..', 'src', 'main', 'store.js');
+  const localRequire = createRequire(filename);
+  const context = { module, require: (name) => name === 'electron' ? {} : localRequire(name) };
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), context);
   return module.exports;
 }
 
