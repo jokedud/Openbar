@@ -632,6 +632,7 @@ function fitDevinPanel(e, contentHeight) {
   const height = Math.min(Math.ceil(contentHeight), devinPanelSize.maxHeight) + 2 * SHADOW_PADDING;
   if (height === bounds.height) return;
   const y = devinPanelSize.atTop ? bounds.y : bounds.y + bounds.height - height;
+  if (panelPendingBounds) panelPendingBounds = { ...panelPendingBounds, y, height };
   panel.setBounds({ ...bounds, y, height });
   syncBackdrop(panel);
 }
