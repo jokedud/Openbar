@@ -1,5 +1,6 @@
 #dock-tabs, .tab-strip { display: flex; align-items: center; }
-#dock-tabs { position: relative; flex: 0 1 auto; min-width: var(--app-strip-min); max-width: min(320px, 30%); height: var(--tile-h); }
+#dock-tabs { position: relative; flex: 0 1 auto; min-width: var(--app-strip-min); max-width: 320px; height: var(--tile-h); }
+[data-layout="full"] #dock-tabs { max-width: min(320px, 30%); }
 .tab-strip { position: relative; min-width: 0; height: 100%; overflow-x: auto; scrollbar-width: none; }
 #dock-tabs:has(.tab-more:not([hidden])) .tab-strip { max-width: calc(100% - var(--app-strip-min)); }
 #dock-tabs .tab-more { position: absolute; top: 0; right: 0; }

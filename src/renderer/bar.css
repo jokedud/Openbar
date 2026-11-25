@@ -15,8 +15,8 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 #center { justify-content: safe center; }
 #right { justify-content: safe flex-end; }
 [data-layout="full"] :is(#left, #right) { flex: 1 1 0; }
-[data-layout="full"] #bar:has(#center .app-strip .app) > :is(#left, #right) { flex-basis: auto; }
-[data-layout="pill"] .zone:has(.app-strip .app), [data-layout="full"] #center:has(.app-strip .app) { flex-shrink: 100; }
+[data-layout="full"] #bar:has(.app-strip .app) > :is(#left, #right) { flex-basis: auto; }
+.zone:has(.app-strip .app) { flex-shrink: 100; }
 
 /* Every widget and app sits on its own glass tile. */
 .w, .app, .w-group { display: flex; align-items: center; height: var(--tile-h); border-radius: var(--tile-r); background: var(--tile);
@@ -61,8 +61,8 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 .apps .app { flex-shrink: 1; gap: 0; }
 .apps .label { min-width: 0; max-width: 158px; text-indent: 8px; }
 .app-strip:has(.app-more:not([hidden])) .label { display: none; }
-#bar[data-measuring-apps] .apps .app { flex-shrink: 0; }
-#bar[data-measuring-apps] .apps .label { display: block; }
+#bar[data-measuring-dock] .apps .app { flex-shrink: 0; }
+#bar[data-measuring-dock] .apps .label { display: block; }
 .app .dot { position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%); height: 3px; width: 3px; border-radius: 2px; background: var(--accent); opacity: .9; }
 .app.active .dot { width: 10px; }
 .app .count { position: absolute; top: 0; right: 0; min-width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 9px; font-weight: 700;
@@ -97,3 +97,9 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 .w-group > .w { background: none; box-shadow: none; }
 .w-group > .w[data-media] { min-width: 0; width: 26px; height: 26px; padding: 0; border-radius: 50%; background: var(--hover); }
 .w-group > .w[data-media="playpause"] { background: var(--accent); color: var(--accent-fg); }
+#bar[data-compact-widgets]:not([data-measuring-dock]) :is(
+  [data-w="media"] .stack, [data-w="media"] [data-media], [data-w="clock"] .stack, [data-w="nextEvent"] .stack,
+  [data-w="network"] .network-rates, [data-w="weather"] .val, [data-w="volume"] .val, [data-w="battery"] .val
+) { display: none; }
+#bar[data-compact-widgets]:not([data-measuring-dock]) [data-w="media"] { padding-right: 0; }
+#bar[data-compact-widgets]:not([data-measuring-dock]) [data-w="media"] .art { width: min(calc(var(--tile-h) - 20px), 28px); height: auto; aspect-ratio: 1; }

@@ -4,7 +4,7 @@ let dockTabId = null;
 const dockTabs = h('nav', { id: 'dock-tabs', 'aria-label': 'Dock tabs' });
 const shortcutIcons = { app: 'desktop', folder: 'folder', website: 'link' };
 const dockLeft = document.getElementById('left');
-let tabStrip, tabFolder, tabObserver;
+let tabStrip, tabFolder;
 
 function folderButton(label, onclick) {
   const button = h('button', { class: 'w dock-folder', 'aria-label': label, 'aria-haspopup': 'dialog', title: label, onclick },
@@ -80,8 +80,6 @@ function renderDockTabs(tabs) {
     });
     tabFolder.classList.add('tab-more');
     dockTabs.append(tabStrip, tabFolder);
-    tabObserver = new ResizeObserver(updateTabFolder);
-    tabObserver.observe(dockTabs);
   }
   if (!dockTabs.isConnected) dockLeft.before(dockTabs);
   const buttons = [{ id: null, name: 'Default widgets' }, ...tabs];
@@ -101,7 +99,6 @@ function renderDockTabs(tabs) {
     if (!isDefault && button.firstChild.textContent !== tab.name) button.firstChild.textContent = tab.name;
   }
   while (tabStrip.childElementCount > buttons.length) tabStrip.lastElementChild.remove();
-  updateTabFolder();
   return active;
 }
 

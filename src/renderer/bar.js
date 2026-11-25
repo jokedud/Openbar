@@ -115,9 +115,11 @@ W.battery = () => {
 W.media = () => {
   const m = OB.state.media;
   if (!m || !m.title) return null;
+  const track = panelBtn('media', '', m.art ? h('img', { class: 'art', src: m.art, alt: '' }) : icon('music', 16),
+    h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '150px' } }, m.title), h('span', { class: 'sub ellipsis', style: { maxWidth: '150px' } }, m.artist || '')));
+  track.title = `Now playing: ${m.title}`;
   return h('div', { class: 'w-group' },
-    panelBtn('media', '', m.art ? h('img', { class: 'art', src: m.art }) : icon('music', 16),
-      h('div', { class: 'stack' }, h('span', { class: 'ellipsis', style: { maxWidth: '150px' } }, m.title), h('span', { class: 'sub ellipsis', style: { maxWidth: '150px' } }, m.artist || ''))),
+    track,
     h('button', { class: 'w', 'data-media': 'playpause', title: m.playing ? 'Pause' : 'Play' }, icon(m.playing ? 'pause' : 'play', 14)),
     h('button', { class: 'w', 'data-media': 'next', title: 'Next' }, icon('next', 14)));
 };
@@ -170,7 +172,6 @@ function cmdWidget(id) {
 let openPanel = null;
 const cache = new Map();
 const appStrips = new WeakMap();
-let appStripObserver;
 
 function updateAppOverflow(strip) {
   const [apps, more] = strip.children;
@@ -309,7 +310,6 @@ function renderZone(zone, names) {
   if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
   const want = [];
-  const changedStrips = [];
   const nodes = cache.get(zone) || new Map();
   const next = new Map();
   for (const [i, item] of names.entries()) {
@@ -323,60 +323,62 @@ function renderZone(zone, names) {
     if (name) node.dataset.w = name;
     const key = typeof item === 'string' ? `${name}:${i}` : item.id;
     const prev = nodes.get(key);
-    const appsChanged = node.className === 'apps' && prev?.outerHTML !== node.outerHTML;
     if (prev) node = patchNode(prev, node);
     next.set(key, node);
     if (node.className === 'apps') {
       if (!appStrips.has(node)) appStrips.set(node, appStrip(node));
-      const strip = appStrips.get(node);
-      if (appsChanged) changedStrips.push(strip);
-      want.push(strip);
+      want.push(appStrips.get(node));
     } else want.push(node);
   }
   cache.set(zone, next);
-  for (const stale of el.children) {
-    if (stale.className === 'app-strip' && !want.includes(stale)) appStripObserver.unobserve(stale);
-  }
   const groups = groupZoneWidgets(el, want);
   const appCount = groups.filter((group) => group.className === 'app-strip' && group.firstElementChild.childElementCount).length;
   if (appCount) el.style.setProperty('--app-zone-min', `calc(${appCount} * var(--app-strip-min) + ${groups.length - 1} * var(--dock-gap))`);
   reconcileChildren(el, groups);
-  for (const strip of changedStrips) {
-    updateAppOverflow(strip);
-    (appStripObserver ||= new ResizeObserver((entries) => {
-      for (const { target } of entries) updateAppOverflow(target);
-    })).observe(strip);
-  }
 }
-function pillWidth(bar) {
-  bar.dataset.measuringApps = '';
+function naturalDockWidth(bar, pill) {
+  bar.dataset.measuringDock = '';
   const cs = getComputedStyle(bar);
   const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
   const gap = parseFloat(cs.columnGap || cs.gap) || 0;
   let w = pad + Math.max(0, bar.children.length - 1) * gap;
   for (const z of bar.children) {
     if (!z.childElementCount) continue;
-    if (z.id === 'dock-tabs') { w += z.firstElementChild.scrollWidth; continue; }
+    if (z.id === 'dock-tabs') {
+      w += pill ? Math.min(z.firstElementChild.scrollWidth, parseFloat(getComputedStyle(z).maxWidth)) : z.clientWidth;
+      continue;
+    }
     const zcs = getComputedStyle(z);
     const zgap = parseFloat(zcs.columnGap || zcs.gap) || 0;
     w += Math.max(0, z.childElementCount - 1) * zgap;
     for (const k of z.children) w += k.className === 'app-strip' ? k.firstElementChild.scrollWidth : k.scrollWidth;
   }
-  delete bar.dataset.measuringApps;
-  return Math.ceil(w + 2);
+  delete bar.dataset.measuringDock;
+  return Math.ceil(w);
 }
 let lastSentWidth = 0;
+function fitDock() {
+  const bar = document.getElementById('bar');
+  const pill = OB.settings.layout === 'pill';
+  const natural = naturalDockWidth(bar, pill);
+  const body = getComputedStyle(document.body);
+  const available = document.body.clientWidth - parseFloat(body.paddingLeft) - parseFloat(body.paddingRight);
+  bar.toggleAttribute('data-compact-widgets', natural > available);
+  updateTabFolder();
+  for (const strip of bar.querySelectorAll('.app-strip')) updateAppOverflow(strip);
+  if (pill && natural + 2 !== lastSentWidth) {
+    lastSentWidth = natural + 2;
+    api.invoke('bar:width', lastSentWidth);
+  } else if (!pill) lastSentWidth = 0;
+}
+let fitFrame = 0;
+function scheduleDockFit() { if (!fitFrame) fitFrame = requestAnimationFrame(() => { fitFrame = 0; fitDock(); }); }
+
 function render() {
   if (dragFrom != null) return;
   const s = OB.settings;
   renderZone('left', s.left); renderZone('center', s.center); renderZone('right', s.right);
-  const bar = document.getElementById('bar');
-  if (s.layout === 'pill') {
-    const w = pillWidth(bar);
-    if (w !== lastSentWidth) { lastSentWidth = w; api.invoke('bar:width', w); }
-  } else {
-    lastSentWidth = 0;
-  }
+  scheduleDockFit();
 }
 let raf = 0;
 function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
@@ -537,13 +539,13 @@ document.addEventListener('dragend', (e) => {
 OB.init().then(() => {
   const barEl = document.getElementById('bar');
   observeSurface(barEl);
+  const dockObserver = new ResizeObserver(scheduleDockFit);
+  for (const zone of [document.body, dockTabs, ...barEl.children]) dockObserver.observe(zone);
   barEl?.addEventListener?.('mouseleave', () => clearDockPreview(false));
   OB.on(scheduleRender);
   api.on('bar:select-tab', (id) => { dockTabId = id || null; scheduleRender(); });
   api.on('panel', (name) => {
     openPanel = name;
-    updateTabFolder();
-    for (const strip of barEl.querySelectorAll('.app-strip')) updateAppOverflow(strip);
     scheduleRender();
   });
   setInterval(scheduleRender, 1000);

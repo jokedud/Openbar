@@ -14,8 +14,8 @@ if (process.versions.electron) {
   const test = require('node:test');
 
   test('dock and custom tabs compact apps, expose hidden windows and restore labels when they fit', async () => {
-    const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
-    const { wide, narrow, tab, restored, width, groups, actions, tightTab, fullCenter, crowded, tabFolder } = JSON.parse(stdout);
+    const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 60000 });
+    const { wide, narrow, tab, restored, width, groups, actions, tightTab, fullCenter, crowded, tabFolder, dynamic } = JSON.parse(stdout);
     assert.equal(wide.more, false);
     assert.equal(wide.labels, true);
     assert.ok(wide.firstTile > narrow.firstTile);
@@ -53,6 +53,11 @@ if (process.versions.electron) {
     assert.deepEqual(tabFolder.shown, tabFolder.clipped);
     assert.equal(tabFolder.selected, 'tab-12');
     assert.equal(tabFolder.scrolled, true);
+    assert.deepEqual(dynamic.idle, { compact: false, more: false, media: null });
+    assert.deepEqual(dynamic.playing, { compact: true, more: false, media: 'none' });
+    assert.deepEqual(dynamic.crowded, { compact: true, more: true, media: 'none' });
+    assert.deepEqual(dynamic.expanded, { compact: false, more: false, media: 'flex' });
+    assert.deepEqual(dynamic.stopped, dynamic.idle);
   });
 }
 
@@ -91,7 +96,7 @@ async function measureDock() {
   });
   ipcMain.handle('panel:select-tab', (_event, id) => { win.webContents.send('bar:select-tab', id); });
   await win.loadFile(path.join(src, 'renderer', 'bar.html'));
-  const measure = () => win.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
+  const measure = () => win.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
     const label = document.querySelector('.app .label');
     const button = document.querySelector('.app-more');
     resolve({
@@ -101,7 +106,7 @@ async function measureDock() {
       labels: getComputedStyle(label).display !== 'none',
       firstTile: label.parentElement.offsetWidth,
     });
-  })))`);
+  }))))`);
   const wide = await measure();
   const naturalWidth = width;
   win.setContentSize(332, 140);
@@ -236,6 +241,37 @@ async function measureDock() {
   })))`);
   const tabFolder = { ...tabPreview, ...tabGrid, ...tabState,
     clipped: tabItems.map(({ id }) => customTabs.find((tab) => tab.id === id)?.name || 'Default widgets') };
+  const shortWindows = windows.slice(0, 6).map((w, i) => ({ ...w, title: String.fromCharCode(65 + i) }));
+  const sendWindows = (wins, media) => win.webContents.send('state', {
+    windows: wins, windowAppOrder: [...new Set(wins.map((w) => w.exe.toLowerCase()))], media,
+  });
+  const playing = { title: 'A long song title that needs space', artist: 'OpenBar layout test', playing: true };
+  win.setContentSize(1100, 140);
+  await win.webContents.executeJavaScript(`Object.assign(OB.settings, {
+    layout: 'full', left: ['start', 'apps'], center: [], right: ['media', 'clock', 'weather'], customTabs: [],
+  }); applyTheme();`);
+  const dynamicState = () => win.webContents.executeJavaScript(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const bar = document.getElementById('bar');
+    const media = bar.querySelector('[data-w="media"] .stack');
+    resolve({ compact: bar.hasAttribute('data-compact-widgets'), more: !bar.querySelector('.app-more').hidden,
+      media: media ? getComputedStyle(media).display : null });
+  }))))`);
+  sendWindows(shortWindows, null);
+  await dynamicState();
+  const justFits = await win.webContents.executeJavaScript(`naturalDockWidth(document.getElementById('bar'), false) +
+    2 * parseFloat(getComputedStyle(document.body).paddingLeft) + 24`);
+  win.setContentSize(justFits, 140);
+  const idle = await dynamicState();
+  sendWindows(shortWindows, playing);
+  const withAudio = await dynamicState();
+  sendWindows(Array.from({ length: 15 }, (_, i) => ({ ...windows[0], hwnd: i + 1, exe: `App${i + 1}.exe` })), playing);
+  const withMoreWindows = await dynamicState();
+  sendWindows(shortWindows, playing);
+  win.setContentSize(1100, 140);
+  const expanded = await dynamicState();
+  sendWindows(shortWindows, null);
+  const stopped = await dynamicState();
   return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth,
-    groups, actions, tightTab, fullCenter, crowded, tabFolder };
+    groups, actions, tightTab, fullCenter, crowded, tabFolder,
+    dynamic: { idle, playing: withAudio, crowded: withMoreWindows, expanded, stopped } };
 }
