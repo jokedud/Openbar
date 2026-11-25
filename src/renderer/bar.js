@@ -169,10 +169,57 @@ function cmdWidget(id) {
 // ---------------- render ----------------
 let openPanel = null;
 const cache = new Map();
+const appStrips = new WeakMap();
+let appStripObserver;
+
+function updateAppOverflow(strip) {
+  const [apps, more] = strip.children;
+  const hidden = apps.scrollWidth <= strip.clientWidth;
+  if (more.hidden !== hidden) more.hidden = hidden;
+}
+
+function appStrip(apps) {
+  const more = h('button', { class: 'w app-more', 'aria-label': 'More apps', 'aria-haspopup': 'menu',
+    title: 'More apps', onclick: () => showAppOverflow(apps) }, '…');
+  more.hidden = true;
+  const strip = h('div', { class: 'app-strip' }, apps, more);
+  apps.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.deltaX || !e.deltaY || apps.scrollWidth <= apps.clientWidth) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? apps.clientWidth : 1;
+    apps.scrollLeft += e.deltaY * unit;
+  }, { passive: false });
+  return strip;
+}
+
+async function showAppOverflow(apps) {
+  const pins = OB.settings.pinned, windows = OB.state.windows || [];
+  const items = [];
+  for (const button of apps.children) {
+    if (!button.matches('.app')) continue;
+    if (button.offsetLeft >= apps.scrollLeft &&
+        button.offsetLeft + button.offsetWidth <= apps.scrollLeft + apps.clientWidth) continue;
+    const pin = button.dataset.pin == null ? null : pins[+button.dataset.pin];
+    const hwnds = button.dataset.hwnds?.split(',').map(Number);
+    const wins = pin ? runningFor(pin) : windows.filter((w) => hwnds?.includes(w.hwnd));
+    const label = button.getAttribute('aria-label');
+    const windowItem = (w) => ({ id: 'w' + w.hwnd, label: w.title });
+    if (wins.length > 1) items.push({ label, submenu: wins.map(windowItem) });
+    else if (wins.length) items.push({ id: 'w' + wins[0].hwnd, label });
+    else if (pin) items.push({ id: 'p' + button.dataset.pin, label });
+  }
+  if (!items.length) return;
+  const picked = await api.invoke('menu', items);
+  if (picked?.startsWith('w')) return api.invoke('win:action', Number(picked.slice(1)), 'focus');
+  if (picked?.startsWith('p')) return api.invoke('launch', pins[Number(picked.slice(1))]);
+}
+
 function renderZone(zone, names) {
   if (zone === 'left') names = dockTabItems(names);
   const el = document.getElementById(zone);
   const want = [];
+  const appScroll = new Map();
   const nodes = cache.get(zone) || new Map();
   const next = new Map();
   for (const [i, item] of names.entries()) {
@@ -188,13 +235,31 @@ function renderZone(zone, names) {
     const prev = nodes.get(key);
     if (prev && prev.outerHTML === node.outerHTML) node = prev;
     next.set(key, node);
-    want.push(node);
+    if (node.className === 'apps') {
+      if (!appStrips.has(node)) {
+        appStrips.set(node, appStrip(node));
+        if (prev?.scrollLeft) appScroll.set(node, prev.scrollLeft);
+      }
+      want.push(appStrips.get(node));
+    } else want.push(node);
   }
   cache.set(zone, next);
   const cur = [...el.children];
-  if (cur.length !== want.length || cur.some((c, i) => c !== want[i])) el.replaceChildren(...want);
+  if (cur.length !== want.length || cur.some((c, i) => c !== want[i])) {
+    cur.filter((node) => node.className === 'app-strip' && !want.includes(node)).forEach((node) => appStripObserver.unobserve(node));
+    el.replaceChildren(...want);
+    for (const strip of want.filter((node) => node.className === 'app-strip')) {
+      updateAppOverflow(strip);
+      const apps = strip.firstElementChild;
+      if (appScroll.has(apps)) apps.scrollLeft = appScroll.get(apps);
+      (appStripObserver ||= new ResizeObserver((entries) => {
+        for (const { target } of entries) updateAppOverflow(target);
+      })).observe(strip);
+    }
+  }
 }
 function pillWidth(bar) {
+  bar.dataset.measuringApps = '';
   const cs = getComputedStyle(bar);
   const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
   const gap = parseFloat(cs.columnGap || cs.gap) || 0;
@@ -204,8 +269,9 @@ function pillWidth(bar) {
     const zcs = getComputedStyle(z);
     const zgap = parseFloat(zcs.columnGap || zcs.gap) || 0;
     w += Math.max(0, z.childElementCount - 1) * zgap;
-    for (const k of z.children) w += k.scrollWidth;
+    for (const k of z.children) w += k.className === 'app-strip' ? k.firstElementChild.scrollWidth : k.scrollWidth;
   }
+  delete bar.dataset.measuringApps;
   return Math.ceil(w + 2);
 }
 function render() {

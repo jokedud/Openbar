@@ -16,7 +16,6 @@ dockLeft.addEventListener('wheel', (e) => {
 function dockTabItems(homeItems) {
   const active = renderDockTabs(OB.settings.customTabs);
   const bar = document.getElementById('bar');
-  if (active && OB.settings.layout === 'pill') bar.style.setProperty('--dock-screen-width', screen.width + 'px');
   if (bar.dataset.customTab !== active?.id) {
     if (active) bar.dataset.customTab = active.id; else delete bar.dataset.customTab;
     dockLeft.scrollLeft = 0;
