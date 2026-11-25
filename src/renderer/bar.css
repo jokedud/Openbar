@@ -19,10 +19,9 @@ body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc
   box-shadow: inset 0 0 0 1px var(--tile-line); white-space: nowrap; flex: none;
   transition: background-color .2s ease-out, filter .2s ease-out, transform .45s cubic-bezier(.34,1.56,.64,1); }
 .w { gap: 8px; min-width: var(--tile-h); justify-content: center; padding: 0 10px; }
-.w:hover, .app:hover { background: var(--tile-hover); transform: translateY(-1px); }
+.w:hover { background: var(--tile-hover); transform: translateY(-1px); }
+.app:hover { background-color: var(--tile-hover); transform: translateY(-1px); }
 .w.open { background: var(--tile-on); }
-/* Apps sit bare on the glass, as in Lumabar's dock; hover still lights a tile. */
-.app { background: none; box-shadow: none; }
 .w:active, .app:active { filter: brightness(.9); transform: scale(.94); transition-duration: .1s; }
 .app img, .app .ph { transition: transform .45s cubic-bezier(.34,1.56,.64,1); } .app:hover img, .app:hover .ph { transform: scale(1.1); }
 .w .val { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -31,11 +30,14 @@ body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc
 .stack > :first-child { font-weight: 600; font-size: 12.5px; }
 .stack.meters > * { font-weight: 600; font-size: 9.5px; color: var(--muted); letter-spacing: .02em; }
 .apps { display: flex; align-items: center; gap: 3px; height: 100%; overflow: hidden; }
-.app { position: relative; justify-content: center; gap: 8px; min-width: var(--tile-h); padding: 0 calc(var(--tile-h) * .2); max-width: 220px; }
-.app img, .app .ph { width: calc(var(--tile-h) * .58); height: calc(var(--tile-h) * .58); flex: none; border-radius: 22%; object-fit: contain; }
+.app { --app-icon-size: min(calc(var(--tile-h) * .65), calc(var(--tile-h) - 11px));
+  position: relative; justify-content: center; gap: 8px; min-width: var(--tile-h); padding: 0 calc(var(--tile-h) * .125); max-width: 220px;
+  border-radius: calc(var(--tile-h) * .36); corner-shape: squircle; border: 1px solid var(--tile-line); box-shadow: none;
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--tile-line) 45%, transparent), transparent); }
+.app img, .app .ph { width: var(--app-icon-size); height: var(--app-icon-size); flex: none; border-radius: 22%; object-fit: contain; }
 .app .ph { display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 12px; }
 .app .label { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-.app .dot { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); height: 3px; width: 3px; border-radius: 2px; background: var(--accent); opacity: .9; }
+.app .dot { position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%); height: 3px; width: 3px; border-radius: 2px; background: var(--accent); opacity: .9; }
 .app.active .dot { width: 10px; }
 .app .count { position: absolute; top: 2px; right: 2px; min-width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 9px; font-weight: 700;
   background: var(--bad); color: #fff; border-radius: 7px; padding: 0 3px; }
