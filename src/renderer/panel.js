@@ -4,6 +4,8 @@ let widget = new URLSearchParams(location.search).get('widget');
 const $ = (id) => document.getElementById(id);
 const P = {};
 const stable = new Set(['start', 'todos', 'notes', 'devin']); // panels with local state: don't rebuild on every tick
+let networkPanel;
+function disposeNetworkPanel() { networkPanel?.dispose(); networkPanel = null; }
 
 function setHead(title, ...actions) { $('title').textContent = title; $('actions').replaceChildren(...actions); }
 const actionBtn = (ic, title, onclick) => h('button', { class: 'btn icon', title, onclick }, icon(ic, 14));
@@ -146,10 +148,8 @@ P.system = (body) => {
   body.append(kv('Uptime', fmt.dur(s.uptime)));
 };
 P.network = (body) => {
-  setHead('Network');
-  const n = OB.state.net;
-  body.append(h('div', { class: 'card' }, kv('Download', fmt.rate(n && n.down)), kv('Upload', fmt.rate(n && n.up)), kv('Online', navigator.onLine ? 'Yes' : 'No')));
-  body.append(h('button', { class: 'btn', onclick: () => api.invoke('open', 'ms-settings:network') }, icon('wifi', 14), 'Network settings'));
+  networkPanel = mountNetworkPanel(body);
+  setHead('Network', networkPanel.online);
 };
 P.battery = async (body) => {
   setHead('Battery');
@@ -371,6 +371,8 @@ function animateIn() {
   el.classList.add('enter');
 }
 async function draw(force) {
+  if (force === 'switch') disposeNetworkPanel();
+  if (widget === 'network' && force !== 'switch') return;
   if (stable.has(widget) && (!force || (widget === 'devin' && force !== 'switch'))) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
@@ -381,9 +383,10 @@ async function draw(force) {
   $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
-  draw(widget === 'devin' ? 'switch' : true).then(animateIn);
-  OB.on((kind) => draw(kind === 'settings'));
+  draw(widget === 'devin' || widget === 'network' ? 'switch' : true).then(animateIn);
+  OB.on((kind, patch) => { if (kind === 'state' && 'net' in patch) networkPanel?.updateTraffic(); draw(kind === 'settings'); });
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
   api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
+  api.on('panel', (w) => { if (w !== 'network') disposeNetworkPanel(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
