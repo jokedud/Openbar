@@ -72,7 +72,7 @@ function layoutBar() {
 
 // ---------------- glass ----------------
 // Same ratios as --bar-r / --panel-r in theme.css and common.js, so the blur region matches the CSS shape.
-const barRadius = (height) => Math.round(height / 2);
+const barRadius = (height) => Math.round(height * 0.3);
 const PANEL_RADIUS = 18;
 let glassMode = 'off';
 function transparencyEnabled() {

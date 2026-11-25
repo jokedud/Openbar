@@ -1,5 +1,5 @@
 html, body { background: transparent; overflow: hidden; height: 100%; user-select: none; }
-body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc(var(--tile-h) / 2); }
+body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc(var(--tile-h) * .275); }
 #bar { position: relative; height: var(--bar-h); display: flex; align-items: center; gap: 3px; padding: 3px; background: var(--bg);
   border-radius: var(--bar-r); animation: rise .5s cubic-bezier(.32,.72,0,1) both;
   box-shadow: inset 0 0 0 1px var(--bar-rim), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -10px 24px rgba(0,0,0,.28), inset 0 10px 24px rgba(255,255,255,.04); }
@@ -20,7 +20,9 @@ body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc
   transition: background-color .2s ease-out, filter .2s ease-out, transform .45s cubic-bezier(.34,1.56,.64,1); }
 .w { gap: 8px; min-width: var(--tile-h); justify-content: center; padding: 0 10px; }
 .w:hover, .app:hover { background: var(--tile-hover); transform: translateY(-1px); }
-.w.open, .app.active { background: var(--tile-on); }
+.w.open { background: var(--tile-on); }
+/* Apps sit bare on the glass, as in Lumabar's dock; hover still lights a tile. */
+.app { background: none; box-shadow: none; }
 .w:active, .app:active { filter: brightness(.9); transform: scale(.94); transition-duration: .1s; }
 .app img, .app .ph { transition: transform .45s cubic-bezier(.34,1.56,.64,1); } .app:hover img, .app:hover .ph { transform: scale(1.1); }
 .w .val { font-variant-numeric: tabular-nums; font-weight: 600; }
