@@ -17,3 +17,5 @@ for (const f of ['src/renderer/bar.html', 'src/renderer/panel.html', 'src/render
   if (!fs.existsSync(path.join(__dirname, '..', f))) { console.error('missing', f); process.exit(1); }
 }
 console.log(`ok: ${files.length} files`);
+const tests = fs.readdirSync(__dirname).filter((file) => file.endsWith('.test.js')).map((file) => path.join(__dirname, file));
+if (tests.length) execFileSync(process.execPath, ['--test', ...tests], { stdio: 'inherit' });

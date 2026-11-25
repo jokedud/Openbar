@@ -138,6 +138,7 @@ function listTaskbarWindows(excludePids = new Set()) {
 
 function focusWindow(hwnd) {
   if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+  if (SetForegroundWindow(hwnd)) return true;
   // Synthesising an ALT tap lifts the foreground lock when we are not the active process.
   keybd_event(0x12, 0, 0, 0);
   keybd_event(0x12, 0, 2, 0);
@@ -149,13 +150,6 @@ function closeWindow(hwnd) { return PostMessageW(hwnd, WM_CLOSE, 0, 0); }
 function foregroundWindow() { return Number(GetForegroundWindow()); }
 
 // ---- media / system keys ----
-const VK = { playpause: 0xB3, next: 0xB0, prev: 0xB1, stop: 0xB2, volup: 0xAF, voldown: 0xAE, mute: 0xAD };
-function sendKey(name) {
-  const vk = VK[name];
-  if (vk === undefined) return;
-  keybd_event(vk, 0, 1, 0);
-  keybd_event(vk, 0, 1 | 2, 0);
-}
 function sendCombo(vks) {
   for (const k of vks) keybd_event(k, 0, 0, 0);
   for (const k of [...vks].reverse()) keybd_event(k, 0, 2, 0);
@@ -247,7 +241,7 @@ function setRoundRegion(hWnd, r) {
 
 module.exports = {
   listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, IsWindow: (h) => IsWindow(h),
-  processPath, processId, sendKey, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
+  processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, taskbarVisible, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
 };
