@@ -6,12 +6,13 @@ body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc
 @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 [data-glass="off"] #bar { box-shadow: inset 0 0 0 1px var(--bar-rim), 0 2px 12px rgba(0,0,0,.25); }
 [data-layout="pill"] body { display: flex; justify-content: center; }
-[data-layout="pill"] #bar { display: inline-flex; width: auto; }
+[data-layout="pill"] #bar { display: inline-flex; width: auto; max-width: 100%; overflow: hidden; }
 .zone { display: flex; align-items: center; gap: 3px; min-width: 0; height: 100%; }
 #left { flex: 1 1 0; justify-content: flex-start; overflow: hidden; }
 #center { flex: 0 0 auto; justify-content: center; }
 #right { flex: 1 1 0; justify-content: flex-end; }
-[data-layout="pill"] #left, [data-layout="pill"] #right { flex: 0 0 auto; }
+[data-layout="pill"] #left, [data-layout="pill"] #center, [data-layout="pill"] #right { flex: 0 0 auto; min-width: max-content; }
+[data-layout="pill"] #left:has(.apps), [data-layout="pill"] #center:has(.apps), [data-layout="pill"] #right:has(.apps) { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 
 /* Every widget and app sits on its own glass tile. */
 .w, .app, .w-group { display: flex; align-items: center; height: var(--tile-h); border-radius: var(--tile-r); background: var(--tile);
@@ -66,4 +67,4 @@ body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc
 .w-group > .w { background: none; box-shadow: none; }
 .w-group > .w[data-media] { min-width: 0; width: 26px; height: 26px; padding: 0; border-radius: 50%; background: var(--hover); }
 .w-group > .w[data-media="playpause"] { background: var(--accent); color: var(--accent-fg); }
-[data-layout="pill"] .zone { min-width: max-content; } [data-layout="pill"] #left { overflow: visible; } [data-layout="pill"] .apps { overflow: visible; }
+[data-layout="pill"] .apps { min-width: 0; overflow: hidden; }
