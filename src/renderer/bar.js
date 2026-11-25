@@ -182,6 +182,7 @@ function pillWidth(bar) {
   return Math.ceil(w + 2);
 }
 function render() {
+  if (dragFrom != null) return;
   const s = OB.settings;
   renderZone('left', s.left); renderZone('center', s.center); renderZone('right', s.right);
   const bar = document.getElementById('bar');
@@ -293,7 +294,12 @@ document.addEventListener('drop', (e) => {
   const [m] = pinned.splice(dragFrom, 1); pinned.splice(to, 0, m);
   OB.setSettings({ pinned });
 });
-document.addEventListener('dragend', () => { dragFrom = null; scheduleRender(); });
+document.addEventListener('dragend', (e) => {
+  if (dragFrom == null) return;
+  dragFrom = null;
+  e.target.classList.remove('dragging');
+  scheduleRender();
+});
 
 OB.init().then(() => {
   OB.on(scheduleRender);
