@@ -100,13 +100,14 @@ function refreshGlass() {
 }
 // Windows applies a resize lazily, so callers pass the size they just set instead of reading it back.
 function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
-  if (!isWin || !hwnd || glassMode === 'off') return;
+  if (!isWin || !hwnd) return;
   const { width, height } = size;
   const k = screen.getDisplayMatching(win.getBounds()).scaleFactor;
   const px = (v) => Math.round(v * k);
-  try {
-    win32.setRoundRegion(hwnd, { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) + 1 });
-  } catch (e) { console.error('region', e); }
+  // Opaque windows drop the clip so a resized window is never cut to an old shape.
+  const region = glassMode === 'off' ? null
+    : { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) + 1 };
+  try { win32.setRoundRegion(hwnd, region); } catch (e) { console.error('region', e); }
 }
 
 // ---------------- Windows taskbar ----------------
