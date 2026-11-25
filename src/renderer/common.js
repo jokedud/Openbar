@@ -88,6 +88,7 @@ const ICONS = {
   cpu: '<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/>',
   wifi: '<path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/>',
   battery: '<rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 11v2"/>',
+  bluetooth: '<path d="m6 6 12 12-6 4V2l6 4L6 18"/>',
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   play: '<path d="M7 4v16l13-8z" fill="currentColor"/>',
