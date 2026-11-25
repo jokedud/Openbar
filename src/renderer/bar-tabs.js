@@ -6,7 +6,7 @@ const shortcutIcons = { app: 'desktop', folder: 'folder', website: 'link' };
 const dockLeft = document.getElementById('left');
 
 dockLeft.addEventListener('wheel', (e) => {
-  if (!dockTabs.isConnected || (!dockTabId && OB.settings.layout === 'pill') || e.ctrlKey || e.deltaX ||
+  if ((!dockTabId && OB.settings.layout === 'pill') || e.ctrlKey || e.deltaX ||
       !e.deltaY || dockLeft.scrollWidth <= dockLeft.clientWidth) return;
   e.preventDefault();
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? dockLeft.clientWidth : 1;

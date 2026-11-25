@@ -6,7 +6,7 @@ const test = require('node:test');
 const { runInNewContext } = require('node:vm');
 const { normalizeCustomTabs, shortcutTarget } = require('../src/main/custom-tabs');
 
-test('scrolls crowded Home apps with the mouse wheel only when the tab switcher is present', () => {
+test('scrolls crowded full-width Home apps with or without the tab switcher', () => {
   let onWheel;
   let prevented = 0;
   const tabSwitcher = { isConnected: true };
@@ -18,10 +18,11 @@ test('scrolls crowded Home apps with the mouse wheel only when the tab switcher 
       onWheel = handler;
     },
   };
+  const settings = { layout: 'full' };
   runInNewContext(readFileSync(path.join(__dirname, '../src/renderer/bar-tabs.js'), 'utf8'), {
     h: () => tabSwitcher,
     document: { getElementById: () => left },
-    OB: { settings: { layout: 'full' } },
+    OB: { settings },
   });
   const wheel = { deltaX: 0, deltaY: 80, deltaMode: 0, preventDefault: () => prevented++ };
   onWheel(wheel);
@@ -32,8 +33,12 @@ test('scrolls crowded Home apps with the mouse wheel only when the tab switcher 
   left.clientWidth = 400;
   tabSwitcher.isConnected = false;
   onWheel(wheel);
-  assert.equal(left.scrollLeft, 80);
-  assert.equal(prevented, 1);
+  assert.equal(left.scrollLeft, 160);
+  assert.equal(prevented, 2);
+  settings.layout = 'pill';
+  onWheel(wheel);
+  assert.equal(left.scrollLeft, 160);
+  assert.equal(prevented, 2);
 });
 
 test('normalizes persisted tabs without altering tab or item order', () => {
