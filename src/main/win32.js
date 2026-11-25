@@ -259,10 +259,8 @@ function setBackdrop(hWnd, mode) {
   const ok = SetWindowCompositionAttribute(hWnd, { attribute: WCA_ACCENT_POLICY, data: accentBuf, size: koffi.sizeof(ACCENT_POLICY) });
   return ok && state ? 'blur' : 'off';
 }
-// Clips the window (and so its blur) to a rounded rectangle, in physical pixels; null removes the clip.
-function setRoundRegion(hWnd, r) {
-  const rgn = r ? CreateRoundRectRgn(r.x, r.y, r.x + r.width + 1, r.y + r.height + 1, 2 * r.radius, 2 * r.radius) : 0;
-  SetWindowRgn(hWnd, rgn, true);
+function setRoundRegion(hWnd, { width, height, radius }) {
+  SetWindowRgn(hWnd, CreateRoundRectRgn(0, 0, width, height, 2 * radius, 2 * radius), true);
 }
 
 module.exports = {

@@ -75,8 +75,9 @@ test('the tray toggle hides and pauses the overlay, then restores its latest sta
   };
   Window.prototype.webContents = new EventEmitter();
   vm.runInNewContext(`${definitions.join('\n')}\ncreateBar(); createTray(); bar.emit('ready-to-show');`, {
-    bar: null, tray: null, companion, BrowserWindow: Window, Tray: tray, Menu: { buildFromTemplate: (items) => items },
+    bar: null, tray: null, companion, createSurfaceWindow: () => new Window(), Tray: tray, Menu: { buildFromTemplate: (items) => items },
     barBounds: () => bounds, layoutBar: () => {}, ICON: '', RENDERER: '', webPreferences: {}, path, isWin: false,
+    padBounds: (r) => r, barShadowPadding: () => 0,
     nativeImage: { createFromPath: () => ({ resize: () => {} }) },
   });
   const toggle = menu.find(({ label }) => label === 'Show / hide bar').click;

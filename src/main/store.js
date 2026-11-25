@@ -8,7 +8,7 @@ const DEFAULT_SETTINGS = {
   position: 'bottom',          // bottom | top
   layout: 'pill',              // full | pill
   style: 'glass',              // glass | midnight | white | black | ios
-  height: 46,
+  height: 54,
   margin: 10,
   reserveSpace: true,          // register as an AppBar so maximised windows don't cover the dock
   taskbar: 'hide',             // hide | autohide | keep
