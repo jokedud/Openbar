@@ -34,6 +34,8 @@ if (process.versions.electron) {
     assert.deepEqual(actions, ['close', [10, 'focus'], 'close'], 'selection closes before focus, and Escape closes');
     assert.equal(tightTab.moreVisible, true, `Overflow button must fit in the selected tab: ${JSON.stringify(tightTab)}`);
     assert.equal(fullCenter.moreVisible, true, `Centered overflow button must fit in the full bar: ${JSON.stringify(fullCenter)}`);
+    assert.equal(fullCenter.moreClickable, true, `Right widgets must not cover centered overflow: ${JSON.stringify(fullCenter)}`);
+    assert.equal(fullCenter.rightFits, true);
   });
 }
 
@@ -118,15 +120,18 @@ async function measureDock() {
     return { zoneWidth: left.clientWidth, moreVisible: !more.hidden && tile.width > 0 && tile.right <= zone.right + 1 };
   })()`);
   const fullCenter = await win.webContents.executeJavaScript(`(async () => {
-    Object.assign(OB.settings, { layout: 'full', customTabs: [], left: [], center: ['apps'], right: [] });
+    Object.assign(OB.settings, { layout: 'full', customTabs: [], left: [], center: ['apps'], right: ['search', 'desktop'] });
     applyTheme();
     render();
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const center = document.getElementById('center');
     const more = center.querySelector('.app-more');
     const tile = more.getBoundingClientRect(), bar = document.getElementById('bar').getBoundingClientRect();
+    const rightWidget = document.querySelector('#right .w').getBoundingClientRect();
     return { zoneWidth: center.clientWidth, barWidth: bar.width,
-      moreVisible: !more.hidden && tile.width > 0 && tile.left >= bar.left && tile.right <= bar.right };
+      moreVisible: !more.hidden && tile.width > 0 && tile.left >= bar.left && tile.right <= bar.right,
+      moreClickable: document.elementFromPoint(tile.x + tile.width / 2, tile.y + tile.height / 2) === more,
+      rightFits: rightWidget.left >= tile.right && rightWidget.right <= bar.right };
   })()`);
   return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth, groups, actions, tightTab, fullCenter };
 }

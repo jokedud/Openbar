@@ -11,6 +11,7 @@ body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--
 #left { flex: 1 1 0; justify-content: flex-start; overflow: hidden; }
 #center { flex: 0 0 auto; justify-content: center; }
 [data-layout="full"] #center:has(.app-strip) { flex-shrink: 1; }
+[data-layout="full"] #bar:has(#center .app-strip) > :is(#left, #right) { flex: 1 0 auto; }
 #right { flex: 1 1 0; justify-content: flex-end; }
 [data-layout="pill"] #left, [data-layout="pill"] #center, [data-layout="pill"] #right { flex: 0 0 auto; min-width: max-content; }
 [data-layout="pill"] :is(#left, #center, #right):has(.app-strip) { flex: 0 1 auto; min-width: 0; overflow: hidden; }
