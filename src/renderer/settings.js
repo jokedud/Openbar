@@ -7,7 +7,7 @@ const TABS = [
 ];
 const WIDGETS = {
   start: 'App launcher', apps: 'Pinned & running apps', search: 'Windows search', desktop: 'Show desktop', sep: 'Separator', clock: 'Clock & date',
-  nextEvent: 'Next meeting', weather: 'Weather', system: 'CPU & RAM', network: 'Network speed', battery: 'Battery', media: 'Now playing',
+  nextEvent: 'Next meeting', weather: 'Weather', system: 'CPU & RAM', network: 'Network speed', battery: 'Battery & power', media: 'Now playing',
   pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', github: 'GitHub activity', devin: 'Devin sessions', crypto: 'Crypto prices', screenTime: 'Screen time',
   quick: 'Quick actions', settings: 'Settings button',
 };

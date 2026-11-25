@@ -151,14 +151,12 @@ P.network = (body) => {
   body.append(h('div', { class: 'card' }, kv('Download', fmt.rate(n && n.down)), kv('Upload', fmt.rate(n && n.up)), kv('Online', navigator.onLine ? 'Yes' : 'No')));
   body.append(h('button', { class: 'btn', onclick: () => api.invoke('open', 'ms-settings:network') }, icon('wifi', 14), 'Network settings'));
 };
-P.battery = async (body) => {
-  setHead('Battery');
-  const b = navigator.getBattery ? await navigator.getBattery() : null;
-  if (!b) return body.append(empty('No battery detected.'));
-  body.append(h('div', { class: 'card' }, h('div', { class: 'big' }, Math.round(b.level * 100) + '%'), barH(b.level * 100),
-    h('div', { class: 'muted', style: { marginTop: '6px' } }, b.charging ? (b.chargingTime && isFinite(b.chargingTime) ? `Full in ${fmt.dur(b.chargingTime)}` : 'Charging') : (isFinite(b.dischargingTime) ? `${fmt.dur(b.dischargingTime)} remaining` : 'On battery'))));
-  body.append(h('button', { class: 'btn', onclick: () => api.invoke('open', 'ms-settings:batterysaver') }, 'Power & battery settings'));
-};
+let stopBatteryPanel;
+function unmountBatteryPanel() {
+  stopBatteryPanel?.();
+  stopBatteryPanel = null;
+}
+P.battery = (body) => { stopBatteryPanel = mountBatteryPanel(body, setHead); };
 
 // ---------- media ----------
 P.media = (body) => {
@@ -371,19 +369,23 @@ function animateIn() {
   el.classList.add('enter');
 }
 async function draw(force) {
+  if (widget === 'battery' && force !== 'switch') return;
   if (stable.has(widget) && (!force || (widget === 'devin' && force !== 'switch'))) return;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
   const fn = P[widget];
-  if (fn) await fn(body); else setHead(widget);
+  if (widget === 'battery') fn(body);
+  else if (fn) await fn(body);
+  else setHead(widget);
   const scrolled = force === 'switch' ? [] : [...$('body').querySelectorAll('.hours')].map((el) => el.scrollLeft);
   $('body').replaceChildren(...body.childNodes);
   $('body').querySelectorAll('.hours').forEach((el, i) => { el.scrollLeft = scrolled[i] || 0; });
 }
 OB.init().then(() => {
-  draw(widget === 'devin' ? 'switch' : true).then(animateIn);
+  draw(['devin', 'battery'].includes(widget) ? 'switch' : true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
-  api.on('panel:widget', (w) => { widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
+  api.on('panel', (w) => { if (w !== 'battery') unmountBatteryPanel(); });
+  api.on('panel:widget', (w) => { unmountBatteryPanel(); widget = w; query = ''; sel = 0; draw('switch').then(animateIn); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });
