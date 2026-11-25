@@ -67,6 +67,10 @@ function observeSurface(surface) {
   function cancelPaddingTimer() {
     if (paddingTimer !== null) { clearTimeout(paddingTimer); paddingTimer = null; }
   }
+  api.on('surface:mouse-reset', () => {
+    cancelPaddingTimer();
+    overPadding = false;
+  });
   function setOverPadding(next) {
     if (!next) cancelPaddingTimer();
     if (overPadding === next) return;
