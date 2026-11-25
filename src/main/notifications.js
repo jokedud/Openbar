@@ -169,9 +169,10 @@ function readWindowsNotifications({ dbPath = defaultDbPath(), now = Date.now(), 
       FROM Notification n
       LEFT JOIN NotificationHandler h ON n.HandlerId = h.RecordId
       WHERE n.Type = 'toast'
+        AND (n.ExpiryTime IS NULL OR n.ExpiryTime <= 116444736000000000 OR (n.ExpiryTime - 116444736000000000) / 10000 > ?)
       ORDER BY n.ArrivalTime DESC
       LIMIT ?
-    `).all(limit);
+    `).all(now, limit);
 
     const items = [];
     for (const row of rows) {

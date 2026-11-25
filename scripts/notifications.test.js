@@ -103,6 +103,19 @@ test('readWindowsNotifications parses Windows wpndatabase.db toast rows, filters
   // Non-allowlisted custom protocol should not become a launchUrl
   assert.equal(result.items[2].app, 'Docker Desktop');
   assert.equal(result.items[2].launchUrl, null);
+
+  // Newer expired rows must not crowd out older active rows under LIMIT
+  const crowdedDb = createTempWpnDb(t, (db) => {
+    db.prepare('INSERT INTO NotificationHandler (RecordId, PrimaryId) VALUES (?, ?)').run(1, 'xyz.openbar.app');
+    const insert = db.prepare('INSERT INTO Notification (Id, HandlerId, Type, ArrivalTime, ExpiryTime, Payload) VALUES (?, ?, ?, ?, ?, ?)');
+    for (let i = 1; i <= 5; i++) {
+      insert.run(100 + i, 1, 'toast', toFiletime(now - i * 1000), toFiletime(now - 500), Buffer.from(`<toast><visual><binding><text>Expired ${i}</text></binding></visual></toast>`));
+    }
+    insert.run(201, 1, 'toast', toFiletime(now - 60_000), 0n, Buffer.from('<toast><visual><binding><text>Active Old 1</text></binding></visual></toast>'));
+    insert.run(202, 1, 'toast', toFiletime(now - 120_000), toFiletime(now + 60_000), Buffer.from('<toast><visual><binding><text>Active Old 2</text></binding></visual></toast>'));
+  });
+  const crowded = readWindowsNotifications({ dbPath: crowdedDb, now, limit: 2 });
+  assert.deepEqual(crowded.items.map((i) => i.id), ['201', '202']);
 });
 
 test('decodeXmlEntities, safeLaunchUrl, parseToastPayload, and formatAppName handle edge cases', () => {
