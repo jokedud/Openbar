@@ -1,0 +1,68 @@
+#panel[data-widget="bluetooth"] {
+  --bluetooth-shift: 13px;
+  --bluetooth-accent: var(--accent);
+  background: radial-gradient(ellipse at 10% 0%, rgba(70, 138, 246, .24), transparent 73%), var(--panel-bg);
+}
+[data-position="top"] #panel[data-widget="bluetooth"] { --bluetooth-shift: -13px; }
+#panel[data-widget="bluetooth"].enter { animation: openbar-bluetooth-pop .4s cubic-bezier(.22,.8,.21,1) both; }
+#panel[data-widget="bluetooth"].enter #body > .bluetooth-content { animation: none; }
+#panel[data-widget="bluetooth"].enter .bluetooth-emblem { animation: openbar-bluetooth-signal .55s .05s cubic-bezier(.22,.8,.21,1) both; }
+@keyframes openbar-bluetooth-pop {
+  0% { opacity: 0; transform: translateY(var(--bluetooth-shift)) scale(.92,.87); }
+  65% { opacity: 1; transform: translateY(0) scale(1,1.01); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes openbar-bluetooth-signal {
+  from { opacity: .15; transform: scale(.65) rotate(-22deg); box-shadow: 0 0 0 0 rgba(91,154,252,.34); }
+  63% { opacity: 1; transform: scale(1.06); box-shadow: 0 0 0 9px rgba(91,154,252,0); }
+  to { transform: none; }
+}
+#panel[data-widget="bluetooth"] .bluetooth-content {
+  display: flex; flex-direction: column; min-height: 100%; padding: 2px 4px;
+}
+#panel[data-widget="bluetooth"] .bluetooth-radio {
+  display: flex; align-items: center; gap: 12px; padding: 12px;
+  border-radius: 14px; background: var(--card); border: 1px solid var(--card-line);
+}
+#panel[data-widget="bluetooth"] .bluetooth-emblem {
+  display: grid; place-items: center; flex: 0 0 42px; height: 42px; border-radius: 12px;
+  color: var(--bluetooth-accent); background: color-mix(in srgb, var(--bluetooth-accent) 17%, transparent);
+  transition: background-color .22s ease, color .22s ease;
+}
+#panel[data-widget="bluetooth"] [data-status="on"] .bluetooth-emblem {
+  color: white; background: #246cda;
+}
+#panel[data-widget="bluetooth"] .bluetooth-status { flex: 1; line-height: 1.4; }
+#panel[data-widget="bluetooth"] .bluetooth-switch {
+  flex: 0 0 40px; min-height: 23px; padding: 3px;
+  border-radius: 20px; border: 1px solid var(--line); background: var(--hover);
+  transition: background-color .22s ease;
+}
+#panel[data-widget="bluetooth"] .bluetooth-switch[aria-checked="true"] { background: #246cda; }
+#panel[data-widget="bluetooth"] .bluetooth-switch[aria-disabled="true"] { opacity: .55; cursor: default; }
+#panel[data-widget="bluetooth"] :is(.bluetooth-switch, .bluetooth-shortcuts button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#panel[data-widget="bluetooth"] .bluetooth-switch span {
+  display: block; width: 15px; height: 15px; border-radius: 50%; background: var(--fg);
+  transition: transform .22s cubic-bezier(.22,.8,.21,1);
+}
+#panel[data-widget="bluetooth"] .bluetooth-switch[aria-checked="true"] span { transform: translateX(17px); background: white; }
+#panel[data-widget="bluetooth"] .bluetooth-devices-heading { margin: 16px 0 7px; font-size: 10px; font-weight: 700; letter-spacing: .1em; }
+#panel[data-widget="bluetooth"] .bluetooth-devices {
+  list-style: none; margin: 0; padding: 0 2px 0 0; max-height: 104px; overflow: auto;
+}
+#panel[data-widget="bluetooth"] .bluetooth-device {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 7px; border-bottom: 1px solid var(--line); font-size: 12px;
+}
+#panel[data-widget="bluetooth"] .bluetooth-device > :last-child { text-align: right; flex: none; }
+#panel[data-widget="bluetooth"] .bluetooth-device-name { overflow: hidden; overflow-wrap: anywhere; }
+#panel[data-widget="bluetooth"] .bluetooth-connected { color: var(--good); }
+#panel[data-widget="bluetooth"] .bluetooth-note { margin: 0; font-size: 12px; line-height: 1.4; }
+#panel[data-widget="bluetooth"] .bluetooth-footer { margin-top: auto; padding-top: 12px; }
+#panel[data-widget="bluetooth"] .bluetooth-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; }
+#panel[data-widget="bluetooth"] .bluetooth-footer .bluetooth-note { margin-top: 8px; }
+#panel[data-widget="bluetooth"] [hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  #panel[data-widget="bluetooth"].enter, #panel[data-widget="bluetooth"].enter .bluetooth-emblem { animation: none; }
+  #panel[data-widget="bluetooth"] :is(.bluetooth-emblem, .bluetooth-switch, .bluetooth-switch span) { transition: none; }
+}

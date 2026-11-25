@@ -3,7 +3,7 @@
 let widget = new URLSearchParams(location.search).get('widget');
 const $ = (id) => document.getElementById(id);
 const P = {};
-const stable = new Set(['start', 'todos', 'notes', 'devin']); // panels with local state: don't rebuild on every tick
+const stable = new Set(['start', 'todos', 'notes', 'devin', 'bluetooth']); // panels with local state: don't rebuild on every tick
 
 function setHead(title, ...actions) { $('title').textContent = title; $('actions').replaceChildren(...actions); }
 const actionBtn = (ic, title, onclick) => h('button', { class: 'btn icon', title, onclick }, icon(ic, 14));
@@ -343,11 +343,22 @@ P.devin = (body) => {
 
 // ---------- router ----------
 let devinSizeObserver;
+let stopBluetoothPanel;
+P.bluetooth = (body) => {
+  setHead('Bluetooth');
+  stopBluetoothPanel = mountBluetoothPanel(body);
+};
+function unmountBluetoothPanel() {
+  stopBluetoothPanel?.();
+  stopBluetoothPanel = null;
+}
+
 let stopVolumePanel;
 function unmountVolumePanel() {
   stopVolumePanel?.();
   stopVolumePanel = null;
 }
+
 function animateIn() {
   const el = $('panel');
   devinSizeObserver?.disconnect();
@@ -383,7 +394,7 @@ async function draw(force) {
     stopVolumePanel = mountVolumePanel($('body'));
     return;
   }
-  if (stable.has(widget) && (!force || (widget === 'devin' && force !== 'switch'))) return;
+  if (stable.has(widget) && (!force || (['devin', 'bluetooth'].includes(widget) && force !== 'switch'))) return;
   const drawing = widget;
   if (widget === 'system' && OB.state.system && force !== 'switch') { cpuHist.push(OB.state.system.cpu); if (cpuHist.length > 60) cpuHist.shift(); }
   const body = h('div');
@@ -396,14 +407,16 @@ async function draw(force) {
 }
 OB.init().then(() => {
   observeSurface($('panel'));
-  draw(['devin', 'volume'].includes(widget) ? 'switch' : true).then(animateIn);
+  draw(['devin', 'bluetooth', 'volume'].includes(widget) ? 'switch' : true).then(animateIn);
   OB.on((kind) => draw(kind === 'settings'));
   setInterval(() => { if (['clock', 'pomodoro'].includes(widget)) draw(); }, 1000);
   api.on('volume:hidden', unmountVolumePanel);
   api.on('panel:widget', (w) => {
+    unmountBluetoothPanel();
     unmountVolumePanel();
     widget = w; query = ''; sel = 0;
     draw('switch').then(() => { if (widget === w) animateIn(); });
   });
+  api.on('panel', (w) => { if (w !== 'bluetooth') unmountBluetoothPanel(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') api.invoke('panel:close'); });
 });

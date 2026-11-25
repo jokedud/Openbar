@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = {
   sounds: false,
   left: ['start', 'apps'],
   center: [],
-  right: ['media', 'weather', 'system', 'network', 'battery', 'pomodoro', 'todos', 'nextEvent', 'devin', 'clock', 'quick', 'volume'],
+  right: ['media', 'weather', 'system', 'network', 'battery', 'pomodoro', 'todos', 'nextEvent', 'devin', 'clock', 'quick', 'bluetooth', 'volume'],
   customTabs: [],
   pinned: [],                  // [{ name, path, args }]
   weather: { city: '', lat: null, lon: null, units: 'celsius' },
