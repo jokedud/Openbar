@@ -85,8 +85,9 @@ P.start = (body) => {
   input.addEventListener('input', () => { query = input.value; sel = 0; drawApps(grid); });
   input.addEventListener('keydown', (e) => {
     const items = filtered();
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { sel = Math.min(items.length - 1, sel + (e.key === 'ArrowDown' ? 5 : 1)); drawApps(grid); e.preventDefault(); }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { sel = Math.max(0, sel - (e.key === 'ArrowUp' ? 5 : 1)); drawApps(grid); e.preventDefault(); }
+    const columns = getComputedStyle(grid).gridTemplateColumns.split(/\s+/).length;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { sel = Math.min(items.length - 1, sel + (e.key === 'ArrowDown' ? columns : 1)); drawApps(grid); e.preventDefault(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { sel = Math.max(0, sel - (e.key === 'ArrowUp' ? columns : 1)); drawApps(grid); e.preventDefault(); }
     if (e.key === 'Enter' && items[sel]) { if (e.ctrlKey) pin(items[sel]); else launch(items[sel]); }
     if (e.key === 'Escape') api.invoke('panel:close');
   });
