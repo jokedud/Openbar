@@ -611,7 +611,15 @@ OB.init().then(() => {
       if (widget !== w) return;
       animateIn();
       surfaceSync.syncBounds();
-      if (seq != null) api.send('panel:ready', seq);
+      if (seq != null) {
+        let sent = false;
+        const notify = () => { if (sent || widget !== w) return; sent = true; api.send('panel:ready', seq); };
+        if (document.hidden || typeof requestAnimationFrame !== 'function') setTimeout(notify, 0);
+        else {
+          requestAnimationFrame(() => requestAnimationFrame(notify));
+          setTimeout(notify, 60);
+        }
+      }
     });
   });
   api.on('panel', (w) => {

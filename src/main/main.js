@@ -175,7 +175,7 @@ function syncBackdrop(win) {
   const backdrop = backdrops.get(win);
   if (!backdrop) return;
   const { window, hwnd, surface } = backdrop;
-  if (glassMode === 'off' || !surface || !win.isVisible()) {
+  if (glassMode === 'off' || !surface || !win.isVisible() || (win === panel && panelPendingBounds)) {
     backdrop.lastSync = null;
     if (window.isVisible()) window.hide();
     return;
@@ -576,13 +576,18 @@ const isFolderPanel = (widget) => widget === 'overflow' || widget === 'tabOverfl
 
 let panelShowSeq = 0;
 let panelShowTimer = null;
+let panelPendingBounds = null;
 function cancelPendingPanelShow() {
   panelShowSeq++;
+  panelPendingBounds = null;
   if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
 }
 function showPanel(seq) {
   if (seq !== panelShowSeq || !panel || panel.isDestroyed() || !panelWidget) return;
   if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
+  const target = panelPendingBounds;
+  panelPendingBounds = null;
+  if (target) panel.setBounds(target);
   if (!panel.isVisible()) panel.show();
   panel.focus();
   syncBackdrop(panel);
@@ -630,7 +635,7 @@ function togglePanel(widget, anchorX, items) {
     panel.setAlwaysOnTop(true, 'screen-saver');
     panel.on('blur', () => {
       if (panelWidget === 'trayApps' && trayApps?.busy) return;
-      if (panel && panel.isVisible() && !panel.webContents.isDevToolsOpened()) {
+      if (panel && panel.isVisible() && !panelPendingBounds && !panel.webContents.isDevToolsOpened()) {
         cancelPendingPanelShow();
         panel.hide();
         panelWidget = null;
@@ -648,9 +653,12 @@ function togglePanel(widget, anchorX, items) {
     if (panel.isVisible()) panel.hide();
     const backdrop = backdrops.get(panel);
     if (backdrop) { backdrop.surface = null; backdrop.lastSync = null; }
-    panel.setBounds(bounds);
+    panelPendingBounds = bounds;
+    const minX = Math.min(0, ...screen.getAllDisplays().map((d) => d.bounds.x));
+    panel.setBounds({ x: minX - bounds.width - 200, y: bounds.y, width: bounds.width, height: bounds.height });
     panelWidget = widget;
     broadcast('panel', widget);
+    panel.showInactive();
     panel.webContents.send('panel:widget', widget, seq);
     panelShowTimer = setTimeout(() => showPanel(seq), 120);
     return;
@@ -666,6 +674,7 @@ function fitDevinPanel(e, contentHeight) {
   const height = Math.min(Math.ceil(contentHeight), devinPanelSize.maxHeight) + 2 * SHADOW_PADDING;
   if (height === bounds.height) return;
   const y = devinPanelSize.atTop ? bounds.y : bounds.y + bounds.height - height;
+  if (panelPendingBounds) panelPendingBounds = { ...panelPendingBounds, y, height };
   panel.setBounds({ ...bounds, y, height });
   syncBackdrop(panel);
 }
