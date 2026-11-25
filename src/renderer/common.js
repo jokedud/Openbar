@@ -30,6 +30,33 @@ function applyTheme() {
   document.documentElement.style.setProperty('--bar-m', (s.margin != null ? s.margin : 6) + 'px');
 }
 
+function observeSurface(surface) {
+  if (OB.platform !== 'win32') return;
+  const reportBounds = () => api.send('surface:bounds', {
+    x: surface.offsetLeft, y: surface.offsetTop,
+    width: surface.offsetWidth, height: surface.offsetHeight,
+    radius: parseFloat(getComputedStyle(surface).borderTopLeftRadius),
+  });
+  const resize = new ResizeObserver(reportBounds);
+  resize.observe(surface);
+  resize.observe(document.body);
+  new MutationObserver(reportBounds).observe(surface, { attributes: true, attributeFilter: ['data-widget'] });
+
+  let inside;
+  function reportMouse(next) {
+    if (inside === next) return;
+    inside = next;
+    api.send('surface:mouse', inside);
+  }
+  function checkMouse(e) {
+    if (!e.buttons) reportMouse(surface.contains(document.elementFromPoint(e.clientX, e.clientY)));
+  }
+  document.addEventListener('mousemove', checkMouse);
+  document.addEventListener('mouseup', checkMouse);
+  document.addEventListener('dragend', checkMouse);
+  document.documentElement.addEventListener('mouseleave', (e) => { if (!e.buttons) reportMouse(false); });
+}
+
 // ---------- DOM ----------
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);

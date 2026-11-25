@@ -1,10 +1,10 @@
 html, body { background: transparent; overflow: hidden; height: 100%; user-select: none; }
-body { padding: var(--bar-m); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc(var(--tile-h) * .275); }
+body { padding: max(var(--bar-m), var(--surface-padding)); --tile-h: calc(var(--bar-h) - 6px); --tile-r: calc(var(--tile-h) * .275); }
 #bar { position: relative; height: var(--bar-h); display: flex; align-items: center; gap: 3px; padding: 3px; background: var(--bg);
-  border-radius: var(--bar-r); animation: rise .5s cubic-bezier(.32,.72,0,1) both;
-  box-shadow: inset 0 0 0 1px var(--bar-rim), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -10px 24px rgba(0,0,0,.28), inset 0 10px 24px rgba(255,255,255,.04); }
+  border-radius: var(--bar-r); overflow: hidden; animation: rise .5s cubic-bezier(.32,.72,0,1) both;
+  box-shadow: inset 0 0 0 1px var(--bar-rim), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -10px 24px rgba(0,0,0,.28), inset 0 10px 24px rgba(255,255,255,.04), var(--surface-shadow); }
 @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-[data-glass="off"] #bar { box-shadow: inset 0 0 0 1px var(--bar-rim), 0 2px 12px rgba(0,0,0,.25); }
+[data-glass="off"] #bar { box-shadow: inset 0 0 0 1px var(--bar-rim), var(--surface-shadow); }
 [data-layout="pill"] body { display: flex; justify-content: center; }
 [data-layout="pill"] #bar { display: inline-flex; width: auto; max-width: 100%; overflow: hidden; }
 .zone { display: flex; align-items: center; gap: 3px; min-width: 0; height: 100%; }
