@@ -12,6 +12,7 @@ const files = [];
 })(path.join(__dirname, '..', 'src'));
 
 for (const f of files) execFileSync(process.execPath, ['--check', f], { stdio: 'inherit' });
+execFileSync(process.execPath, ['--test', path.join(__dirname, 'taskbar-recovery.test.js')], { stdio: 'inherit' });
 const pkg = require('../package.json');
 for (const f of ['src/renderer/bar.html', 'src/renderer/panel.html', 'src/renderer/settings.html', 'src/renderer/assets/icon.png', pkg.main]) {
   if (!fs.existsSync(path.join(__dirname, '..', f))) { console.error('missing', f); process.exit(1); }

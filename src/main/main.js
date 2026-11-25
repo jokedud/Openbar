@@ -2,6 +2,7 @@
 const path = require('path');
 const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
+const TaskbarRecovery = require('./taskbar-recovery');
 const sources = require('./sources');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
@@ -12,7 +13,7 @@ const win32 = isWin ? require('./win32') : null;
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId('xyz.openbar.app');
 
-let settingsStore, dataStore;
+let settingsStore, dataStore, taskbarRecovery;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
@@ -114,27 +115,39 @@ function clipGlass(win, hwnd, inset, radius, size = win.getContentBounds()) {
 function applyTaskbar() {
   if (!isWin) return;
   const mode = S().taskbar;
-  const data = D();
   if (mode === 'keep') { restoreTaskbar(); return; }
-  if (!data.taskbarRestore) {
-    dataStore.set({ taskbarRestore: { autohide: (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0 } });
+  if (!win32.hasTaskbar()) return;
+  const pending = taskbarRecovery.pending();
+  if (pending && pending.id !== taskbarRecovery.id) return;
+  const original = D().taskbarRestore;
+  const autohide = (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0;
+  const baseline = pending?.autohide ?? (original && !original.guarded ? !!original.autohide : autohide);
+  if (!taskbarRecovery.arm(baseline)) {
+    if (original?.guarded && pending?.id === original.id) restoreTaskbar();
+    return;
+  }
+  if (!original?.guarded || original.id !== pending?.id) {
+    dataStore.set({ taskbarRestore: { autohide: baseline, guarded: true, id: taskbarRecovery.id } });
     dataStore.save(true);
   }
-  win32.setTaskbarAutoHide(true);
+  if (!autohide) win32.setTaskbarAutoHide(true);
   win32.setTaskbarVisible(mode !== 'hide');
 }
 
-// Explorer restarts and some shell actions bring the taskbar back; keep it hidden.
-function enforceTaskbar() {
-  if (isWin && S().taskbar === 'hide' && win32.taskbarVisible()) win32.setTaskbarVisible(false);
-}
-
 function restoreTaskbar() {
-  if (!isWin) return;
+  if (!isWin || !taskbarRecovery) return;
+  const pending = taskbarRecovery.pending();
+  if (pending && pending.id !== taskbarRecovery.id) return;
   const r = D().taskbarRestore;
-  win32.setTaskbarVisible(true);
+  const original = pending || (r && !r.guarded ? r : null);
+  if (original) {
+    if (!win32.hasTaskbar()) return;
+    win32.setTaskbarAutoHide(!!original.autohide);
+    if (!win32.setTaskbarVisible(true) || !win32.hasTaskbar() ||
+        ((win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0) !== !!original.autohide) return;
+  }
+  taskbarRecovery.restored();
   if (r) {
-    win32.setTaskbarAutoHide(!!r.autohide);
     dataStore.set({ taskbarRestore: null });
     dataStore.save(true);
   }
@@ -529,6 +542,7 @@ app.on('second-instance', () => openSettings());
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
+  if (isWin) taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
   const firstRun = !require('fs').existsSync(settingsStore.file);
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
@@ -545,7 +559,7 @@ app.whenReady().then(() => {
   const timers = [
     every(1000, pollWindows),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
-    every(3000, enforceTaskbar),
+    every(3000, applyTaskbar),
     every(60 * 1000, refreshers.disk),
     every(15 * 60 * 1000, refreshers.weather),
     every(5 * 60 * 1000, refreshers.calendar),
