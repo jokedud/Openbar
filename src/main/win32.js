@@ -1,6 +1,5 @@
 'use strict';
 // Thin Win32 bindings (via koffi, no native compile step) used by the dock.
-const { statSync } = require('fs');
 const koffi = require('koffi');
 
 const user32 = koffi.load('user32.dll');
@@ -48,7 +47,7 @@ const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProces
 
 const SHAppBarMessage = shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32_t msg, _Inout_ APPBARDATA *data)');
 const DwmGetWindowAttribute = dwmapi.func('long __stdcall DwmGetWindowAttribute(intptr_t hWnd, uint32_t attr, _Out_ uint32_t *val, uint32_t size)');
-const RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t key, const char16_t *subKey, const char16_t *value, uint32_t flags, void *type, _Out_ uint8_t *data, _Inout_ uint32_t *size)');
+const RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t key, const char16_t *subKey, const char16_t *value, uint32_t flags, void *type, void *data, _Out_ uint32_t *size)');
 
 // Native glass: an accent blur behind the window, clipped to a rounded region.
 const ACCENT_POLICY = koffi.struct('ACCENT_POLICY', { state: 'int', flags: 'int', color: 'uint32', animation: 'int' });
@@ -67,7 +66,7 @@ const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 const SW_HIDE = 0, SW_SHOWNA = 8, SW_RESTORE = 9, SW_MINIMIZE = 6, SW_SHOW = 5;
 const WM_CLOSE = 0x10;
 const HKEY_CURRENT_USER = -0x7fffffff;
-const RRF_RT_REG_SZ = 0x2, RRF_RT_REG_EXPAND_SZ = 0x4;
+const RRF_RT_ANY = 0xffff;
 const ERROR_FILE_NOT_FOUND = 2;
 
 const ABM = { NEW: 0, REMOVE: 1, QUERYPOS: 2, SETPOS: 3, GETSTATE: 4, GETTASKBARPOS: 5, SETSTATE: 10 };
@@ -234,22 +233,8 @@ function hwndFromBuffer(buf) {
   return buf.length >= 8 ? Number(buf.readBigUInt64LE(0)) : buf.readUInt32LE(0);
 }
 
-function shouldRestoreLoginItem(name) {
-  const data = Buffer.alloc(65536);
-  const size = [data.length];
-  const result = RegGetValueW(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Run', name,
-    RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, null, data, size);
-  if (result === ERROR_FILE_NOT_FOUND) return true;
-  if (result !== 0) return false;
-  const command = readW(data, size[0] / 2 - 1).trim();
-  const target = /^"([^"\0]+)"(?:\s|$)/.exec(command)?.[1] ?? /^[^\s"\0]+$/.exec(command)?.[0];
-  if (!target || !/^(?:[a-z]:[\\/]|\\\\).+\.exe$/i.test(target)) return false;
-  try {
-    statSync(target);
-    return false;
-  } catch (error) {
-    return error.code === 'ENOENT' || error.code === 'ENOTDIR';
-  }
+function isLoginItemMissing(name) {
+  return RegGetValueW(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Run', name, RRF_RT_ANY, null, null, [0]) === ERROR_FILE_NOT_FOUND;
 }
 
 const ACCENT_ENABLE_BLURBEHIND = 3;
@@ -276,5 +261,5 @@ module.exports = {
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
-  shouldRestoreLoginItem,
+  isLoginItemMissing,
 };
