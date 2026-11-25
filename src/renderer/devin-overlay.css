@@ -1,0 +1,8 @@
+html, body { margin: 0; overflow: hidden; background: transparent; pointer-events: none; }
+#cursor, #otter { position: absolute; top: 0; left: 0; }
+#otter { image-rendering: pixelated; }
+#cursor { width: 64px; height: 64px; }
+#cursor svg { position: absolute; inset: 0; overflow: visible; }
+#fold { filter: drop-shadow(0 2px 3px #0a263db3); transform-origin: 25% 25%; }
+#arcs { stroke-width: 1.35; transform-origin: 35px 34px; }
+#ripple { fill: none; stroke: #a1eeff; stroke-width: 1.5; opacity: 0; transform-origin: 13px 13px; }

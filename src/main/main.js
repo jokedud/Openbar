@@ -10,6 +10,7 @@ const { registerBrightnessIpc } = require('./brightness');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
+const DevinCompanion = require('./devin-companion');
 const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth');
 const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
@@ -40,7 +41,7 @@ function refreshVolume(change) {
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId(APP_ID);
 
-let settingsStore, dataStore, devinStore, taskbarRecovery;
+let settingsStore, dataStore, devinStore, taskbarRecovery, companion;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
@@ -101,6 +102,8 @@ function layoutBar() {
   bar.setBounds(padBounds(b, barShadowPadding()));
   syncBackdrop(bar);
   bar.setAlwaysOnTop(true, 'screen-saver');
+  companion?.configure(S(), b);
+  companion?.raise();
 }
 
 // ---------------- floating surfaces ----------------
@@ -487,6 +490,8 @@ function createBar() {
     if (!cleanedUp && isWin && D().taskbarRestore) app.quit();
   });
   bar.loadFile(path.join(RENDERER, 'bar.html'));
+  bar.on('show', () => companion?.setDockVisible(true));
+  bar.on('hide', () => companion?.setDockVisible(false));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
   if (isWin) {
     barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
@@ -494,7 +499,7 @@ function createBar() {
     refreshGlass();
     nativeTheme.on('updated', refreshGlass);
   }
-  bar.on('closed', () => { bar = null; });
+  bar.on('closed', () => { bar = null; companion?.setDockVisible(false); });
 }
 
 const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [356, 250], battery: [344, 326], quick: [320, 320], start: [520, 560] };
@@ -641,6 +646,7 @@ function saveDevinConfig(config) {
   try {
     devinStore.replace(config);
     devinStore.save(true);
+    companion?.configure(S(), bar && padBounds(bar.getBounds(), -barShadowPadding()), true);
     return devinConfigInfo();
   } catch {
     devinStore.value = previous;
@@ -648,9 +654,21 @@ function saveDevinConfig(config) {
   }
 }
 
+const storageAvailable = () => safeStorage.isEncryptionAvailable()
+  && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
+
+function listCloudDevinSessions(cursor) {
+  const { encrypted, orgId } = devinStore.get();
+  if (!encrypted) return { error: 'missing' };
+  try {
+    if (!storageAvailable()) return { error: 'storage' };
+    return devin.listSessions({ token: safeStorage.decryptString(Buffer.from(encrypted, 'base64')), orgId }, cursor);
+  } catch {
+    return { error: 'storage' };
+  }
+}
+
 function registerDevinIpc() {
-  const storageAvailable = () => safeStorage.isEncryptionAvailable()
-    && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
   ipcMain.handle('devin:config', devinConfigInfo);
   ipcMain.handle('devin:save', (e, key, organization) => {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
@@ -674,16 +692,7 @@ function registerDevinIpc() {
     return saveDevinConfig({});
   });
   ipcMain.handle('devin:list-local', () => devin.listLocalSessions());
-  ipcMain.handle('devin:list', (_e, cursor) => {
-    const { encrypted, orgId } = devinStore.get();
-    if (!encrypted) return { error: 'missing' };
-    try {
-      if (!storageAvailable()) return { error: 'storage' };
-      return devin.listSessions({ token: safeStorage.decryptString(Buffer.from(encrypted, 'base64')), orgId }, cursor);
-    } catch {
-      return { error: 'storage' };
-    }
-  });
+  ipcMain.handle('devin:list', (_e, cursor) => listCloudDevinSessions(cursor));
   ipcMain.handle('devin:open', async (_e, id) => {
     const url = devin.sessionUrl(id);
     if (!url) return false;
@@ -818,6 +827,13 @@ app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
   devinStore = new JsonFile('devin.json', { encrypted: '', orgId: '' });
+  if (isWin) companion = new DevinCompanion({
+    preload: PRELOAD, listLocal: devin.listLocalSessions, listCloud: listCloudDevinSessions,
+    foregroundBounds: () => {
+      const bounds = win32.foregroundWindowBounds(process.pid);
+      return bounds ? screen.screenToDipRect(null, bounds) : null;
+    },
+  });
   if (isWin) {
     taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
     batteryNative = createBattery();
@@ -837,6 +853,7 @@ app.whenReady().then(() => {
   registerBrightnessIpc(ipcMain, shell, (e) =>
     panelWidget === 'brightness' && panel && !panel.isDestroyed() && e.sender === panel.webContents, isWin);
   registerIpc();
+  if (companion) ipcMain.on('devin:motion-idle', (e) => companion.hideIfIdle(e.sender));
   if (isWin) registerSurfaceIpc();
   createBar();
   createTray();
@@ -857,6 +874,7 @@ app.whenReady().then(() => {
     every(5 * 60 * 1000, refreshers.crypto),
   ];
   stoppers.push(() => timers.forEach(clearInterval));
+  stoppers.push(() => companion?.stop());
   scheduleCommands();
   if (isWin) stoppers.push(sources.startHelper(onHelper));
 

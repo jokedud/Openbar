@@ -16,6 +16,8 @@ const DEFAULT_SETTINGS = {
   showLabels: false,
   groupWindows: true,
   sounds: false,
+  devinCursor: true,
+  devinOtter: true,
   left: ['start', 'apps'],
   center: [],
   right: ['media', 'weather', 'system', 'network', 'battery', 'brightness', 'pomodoro', 'todos', 'nextEvent', 'devin', 'clock', 'quick', 'bluetooth', 'volume'],

@@ -230,6 +230,11 @@ T.devin = (m) => {
     field('API key', 'Create a personal access token in Devin under Settings → Devin API. OpenBar encrypts the key on this PC.', key),
     field('Organization ID', 'Required for current tokens. Copy it from the top of the same page. Legacy apk_ keys do not use this field.', organization),
     h('div', { class: 'row' }, saveKey, removeKey), status);
+  if (OB.platform === 'win32') m.append(
+    field('Devin fold cursor', 'Show a click-through visual pointer when a Devin session is active. Local activity is estimated from recent updates.',
+      toggle(() => S().devinCursor, (v) => save({ devinCursor: v }))),
+    field('Pixel otter', 'Keep an animated otter companion at the corner of the dock.',
+      toggle(() => S().devinOtter, (v) => save({ devinOtter: v }))));
   if (!['left', 'center', 'right'].some((zone) => S()[zone].includes('devin'))) {
     m.append(h('button', { class: 'btn', onclick: () => save({ right: [...S().right, 'devin'] }).then(draw) }, 'Add Devin to dock'));
   }
