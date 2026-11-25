@@ -1,10 +1,11 @@
 'use strict';
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor, safeStorage } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
 const sources = require('./sources');
 const calendar = require('./calendar');
 const startmenu = require('./startmenu');
+const devin = require('./devin');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -12,7 +13,7 @@ const win32 = isWin ? require('./win32') : null;
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.setAppUserModelId('xyz.openbar.app');
 
-let settingsStore, dataStore;
+let settingsStore, dataStore, devinStore;
 let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
@@ -365,11 +366,12 @@ function createBar() {
   bar.on('closed', () => { bar = null; });
 }
 
-const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
+const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 420], todos: [360, 460], notes: [380, 420], media: [360, 260], pomodoro: [320, 300], github: [360, 420], devin: [374, 444], crypto: [320, 340], clock: [340, 480], apps: [520, 560], screenTime: [360, 440], network: [320, 220], battery: [300, 200], quick: [320, 320], start: [520, 560] };
 
 function togglePanel(widget, anchorX) {
-  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; return; }
+  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
   const [w, preferredH] = PANEL_SIZES[widget] || [360, 420];
+  const radius = widget === 'devin' ? 28 : PANEL_RADIUS;
   const bb = bar.getBounds();
   const d = screen.getDisplayMatching(bb).workArea;
   const db = screen.getDisplayMatching(bb).bounds;
@@ -390,11 +392,11 @@ function togglePanel(widget, anchorX) {
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
     panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
     if (panelHwnd) setBackdrop(panelHwnd, glassMode);
-    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
+    clipGlass(panel, panelHwnd, 0, radius, { width: w, height: h });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
     panel.setBounds({ x, y, width: w, height: h });
-    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS, { width: w, height: h });
+    clipGlass(panel, panelHwnd, 0, radius, { width: w, height: h });
     panel.webContents.send('panel:widget', widget);
     panel.show(); panel.focus();
   }
@@ -472,7 +474,64 @@ function launch(item) {
   return shell.openPath(item.path);
 }
 
+function registerDevinIpc() {
+  const info = () => ({ configured: !!devinStore.get().encrypted, orgId: devinStore.get().orgId });
+  const storageAvailable = () => safeStorage.isEncryptionAvailable()
+    && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
+  const saveConfig = (config) => {
+    const previous = devinStore.get();
+    try {
+      devinStore.replace(config);
+      devinStore.save(true);
+      return info();
+    } catch {
+      devinStore.value = previous;
+      return { error: 'storage' };
+    }
+  };
+  ipcMain.handle('devin:config', () => info());
+  ipcMain.handle('devin:save', (e, key, organization) => {
+    if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
+    if (typeof key !== 'string' || typeof organization !== 'string') return { error: 'invalid' };
+    const token = key.trim(), orgId = organization.trim();
+    if (!token || /\s/.test(token)) return { error: 'invalid' };
+    if (!token.startsWith('apk_') && !devin.ORG_ID.test(orgId)) return { error: 'organization' };
+    if (!storageAvailable()) return { error: 'storage' };
+    try {
+      const encrypted = safeStorage.encryptString(token).toString('base64');
+      return saveConfig({ encrypted, orgId: token.startsWith('apk_') ? '' : orgId });
+    } catch {
+      return { error: 'storage' };
+    }
+  });
+  ipcMain.handle('devin:remove', (e) => {
+    if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
+    return saveConfig({});
+  });
+  ipcMain.handle('devin:list', (_e, cursor) => {
+    const { encrypted, orgId } = devinStore.get();
+    if (!encrypted) return { error: 'missing' };
+    try {
+      if (!storageAvailable()) return { error: 'storage' };
+      return devin.listSessions({ token: safeStorage.decryptString(Buffer.from(encrypted, 'base64')), orgId }, cursor);
+    } catch {
+      return { error: 'storage' };
+    }
+  });
+  ipcMain.handle('devin:open', async (_e, id) => {
+    const url = devin.sessionUrl(id);
+    if (!url) return false;
+    try {
+      await shell.openExternal(url);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function registerIpc() {
+  registerDevinIpc();
   ipcMain.handle('init', () => ({ settings: S(), data: D(), state, platform: process.platform, version: app.getVersion() }));
   ipcMain.handle('settings:set', (_e, patch) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.set(patch); applySettings(prev); return S(); });
   ipcMain.handle('settings:replace', (_e, v) => { const prev = JSON.parse(JSON.stringify(S())); settingsStore.replace(v); applySettings(prev); return S(); });
@@ -529,6 +588,7 @@ app.on('second-instance', () => openSettings());
 app.whenReady().then(() => {
   settingsStore = new JsonFile('settings.json', DEFAULT_SETTINGS);
   dataStore = new JsonFile('data.json', DEFAULT_DATA);
+  devinStore = new JsonFile('devin.json', { encrypted: '', orgId: '' });
   const firstRun = !require('fs').existsSync(settingsStore.file);
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
