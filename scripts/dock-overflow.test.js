@@ -15,7 +15,7 @@ if (process.versions.electron) {
 
   test('dock and custom tabs compact apps, expose hidden windows and restore labels when they fit', async () => {
     const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
-    const { wide, narrow, tab, restored, width, groups, actions } = JSON.parse(stdout);
+    const { wide, narrow, tab, restored, width, groups, actions, tightTab } = JSON.parse(stdout);
     assert.equal(wide.more, false);
     assert.equal(wide.labels, true);
     assert.ok(wide.firstTile > narrow.firstTile);
@@ -32,6 +32,7 @@ if (process.versions.electron) {
     assert.deepEqual(groups.nested, ['Window 9 — notes and research', 'Window 10 — notes and research']);
     assert.equal(groups.icons, groups.titles.length);
     assert.deepEqual(actions, ['close', [10, 'focus'], 'close'], 'selection closes before focus, and Escape closes');
+    assert.equal(tightTab.moreVisible, true, `Overflow button must fit in the selected tab: ${JSON.stringify(tightTab)}`);
   });
 }
 
@@ -83,6 +84,7 @@ async function measureDock() {
   await win.webContents.executeJavaScript("showAppOverflow(document.querySelector('.apps'), document.querySelector('.app-more'))");
   win.setContentSize(1700, 140);
   const restored = await measure();
+  const restoredWidth = width;
   const panel = new BrowserWindow({ show: false, webPreferences });
   await panel.loadFile(path.join(src, 'renderer', 'panel.html'), { query: { widget: 'overflow' } });
   const groups = await panel.webContents.executeJavaScript(`new Promise(resolve => {
@@ -104,5 +106,15 @@ async function measureDock() {
   const closed = new Promise(resolve => { onClose = resolve; });
   await panel.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))");
   await closed;
-  return { wide, narrow, tab, restored: { ...restored, width }, width: naturalWidth, groups, actions };
+  win.setContentSize(332, 140);
+  const tightTab = await win.webContents.executeJavaScript(`(async () => {
+    OB.settings.right = ['search', 'desktop', 'clock', 'quick', 'start', 'system'];
+    render();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const left = document.getElementById('left');
+    const more = left.querySelector('.app-more');
+    const tile = more.getBoundingClientRect(), zone = left.getBoundingClientRect();
+    return { zoneWidth: left.clientWidth, moreVisible: !more.hidden && tile.width > 0 && tile.right <= zone.right + 1 };
+  })()`);
+  return { wide, narrow, tab, restored: { ...restored, width: restoredWidth }, width: naturalWidth, groups, actions, tightTab };
 }

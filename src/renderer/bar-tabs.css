@@ -4,3 +4,4 @@
 #bar[data-custom-tab] #left, [data-layout="full"] #left { overflow-x: auto; scrollbar-width: none; }
 [data-layout="pill"] #bar[data-custom-tab] { flex: none; width: max-content; }
 [data-layout="pill"] #bar[data-custom-tab] #left { flex: 0 1 auto; min-width: 0; }
+[data-layout="pill"] #bar[data-custom-tab] #left:not(:empty) { min-width: calc(var(--tile-h) + 3px); }
