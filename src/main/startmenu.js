@@ -9,11 +9,20 @@ const iconCache = new Map();
 async function iconFor(file) {
   if (!file) return '';
   if (iconCache.has(file)) return iconCache.get(file);
+  const files = [file];
+  if (/\.lnk$/i.test(file)) {
+    try {
+      const { target } = shell.readShortcutLink(file);
+      if (target && target !== file) files.unshift(target);
+    } catch (_) { /* use the shortcut icon */ }
+  }
   let url = '';
-  try {
-    const img = await app.getFileIcon(file, { size: 'large' });
-    url = img.isEmpty() ? '' : img.toDataURL();
-  } catch (_) { url = ''; }
+  for (const candidate of files) {
+    try {
+      const img = await app.getFileIcon(candidate, { size: 'large' });
+      if (!img.isEmpty()) { url = img.toDataURL(); break; }
+    } catch (_) { /* try the next icon */ }
+  }
   iconCache.set(file, url);
   return url;
 }
