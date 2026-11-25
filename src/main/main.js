@@ -16,6 +16,9 @@ const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require(
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
 const { createBattery, openPowerSettings } = require('./battery');
 const { WindowPreviewController } = require('./window-preview');
+const { TrayApps, trayLayoutMigration } = require('./tray-apps');
+const windowPoll = require('./window-poll');
+const { SurfaceInput } = require('./surface-input');
 
 const isWin = process.platform === 'win32';
 const win32 = isWin ? require('./win32') : null;
@@ -47,7 +50,7 @@ let bar = null, panel = null, settingsWin = null, tray = null;
 let barHwnd = 0;
 let panelWidget = null;
 let devinPanelSize = null;
-let batteryNative, batteryEstimate;
+let batteryNative, batteryEstimate, trayApps;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
   weather: null, calendar: { events: [], errors: [] }, github: null, crypto: null, commands: {},
@@ -152,18 +155,16 @@ function createSurfaceWindow(options) {
   applyBackdrop(hwnd, glassMode);
   // The native blur is clipped inside the CSS rim; the visible edge and shadow are never region-clipped.
   const win = new BrowserWindow({ ...options, parent: backdrop });
-  const entry = { window: backdrop, hwnd, surface: null, lastSync: null, ignoringMouse: false };
-  backdrops.set(win, entry);
+  const layers = { window: backdrop, hwnd, surface: null, lastSync: null };
+  const input = layers.input = new SurfaceInput(win, () => screen.getCursorScreenPoint(), () => layers.surface);
+  backdrops.set(win, layers);
   win.on('show', () => syncBackdrop(win));
   win.on('hide', () => {
-    entry.lastSync = null;
-    if (entry.ignoringMouse) {
-      entry.ignoringMouse = false;
-      if (!win.isDestroyed()) win.setIgnoreMouseEvents(false);
-    }
+    layers.lastSync = null;
+    input.stop();
     if (!backdrop.isDestroyed()) backdrop.hide();
   });
-  win.once('closed', () => { if (!backdrop.isDestroyed()) backdrop.destroy(); });
+  win.once('closed', () => { input.stop(); if (!backdrop.isDestroyed()) backdrop.destroy(); });
   return win;
 }
 
@@ -212,13 +213,7 @@ function registerSurfaceIpc() {
   });
   ipcMain.on('surface:mouse', (e, overPadding) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    const backdrop = backdrops.get(win);
-    if (!backdrop) return;
-    const ignore = overPadding === true;
-    if (backdrop.ignoringMouse === ignore) return;
-    backdrop.ignoringMouse = ignore;
-    if (ignore) win.setIgnoreMouseEvents(true, { forward: true });
-    else win.setIgnoreMouseEvents(false);
+    backdrops.get(win)?.input.update(overPadding === true);
   });
   ipcMain.on('panel:ready', (e, seq) => {
     if (panel && !panel.isDestroyed() && e.sender === panel.webContents) showPanel(seq);
@@ -226,52 +221,71 @@ function registerSurfaceIpc() {
 }
 
 // ---------------- Windows taskbar ----------------
-function applyTaskbar() {
-  if (!isWin) return;
+let taskbarWork, appliedTaskbar;
+function scheduleTaskbar(force = false) {
+  if (!isWin || cleanedUp || (taskbarWork && !force)) return;
+  const current = Promise.resolve(taskbarWork).then(() => {
+    if (!cleanedUp) return applyTaskbar();
+  }).catch((error) => console.error('Windows taskbar:', error)).finally(() => {
+    if (taskbarWork === current) taskbarWork = null;
+  });
+  taskbarWork = current;
+}
+
+async function applyTaskbar() {
+  if (!isWin || trayApps?.busy) return;
   const pending = taskbarRecovery.pending();
   if (pending && pending.id !== taskbarRecovery.id) {
     taskbarRecovery.resume(pending);
     return;
   }
   const mode = S().taskbar;
-  if (mode === 'keep') { restoreTaskbar(); return; }
-  if (!win32.hasTaskbar()) return;
+  if (mode === 'keep') return restoreTaskbar();
+  const windows = win32.taskbarWindows();
+  if (!windows.length) { appliedTaskbar = null; return; }
   const visible = mode !== 'hide';
   const original = D().taskbarRestore;
-  const autohide = (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0;
-  const alreadySet = autohide && win32.taskbarVisibilityIs(visible);
   const legacy = original && !original.guarded;
   const overridden = pending && pending.phase !== 'prepared';
-  if (alreadySet && !legacy && !overridden) return;
+  const matches = win32.taskbarVisibilityIs(visible, windows);
+  const key = [mode, ...windows].join(':');
+  if (appliedTaskbar === key && matches && (!overridden || taskbarRecovery.ready())) return;
+  appliedTaskbar = null;
+  const autohide = (await win32.getTaskbarState(windows[0]) & win32.ABS_AUTOHIDE) !== 0;
+  const alreadySet = autohide && matches;
+  if (alreadySet && !legacy && !pending) { appliedTaskbar = key; return; }
   const baseline = legacy ? !!original.autohide : autohide;
   if (!taskbarRecovery.arm(baseline)) {
-    if (overridden) restoreTaskbar();
+    if (overridden) await restoreTaskbar();
     return;
   }
-  if (alreadySet && pending?.phase === 'applied') return;
+  if (alreadySet && pending?.phase === 'applied') { appliedTaskbar = key; return; }
   // Journal intent before touching Explorer or replacing a legacy baseline.
   if (!taskbarRecovery.recordOverride(baseline)) return;
   if (pending?.phase === 'prepared') {
     dataStore.set({ taskbarRestore: { autohide: baseline, guarded: true, id: taskbarRecovery.id } });
     dataStore.save(true);
   }
-  if (!autohide) win32.setTaskbarAutoHide(true);
-  if (win32.setTaskbarVisible(visible) && (win32.getTaskbarState() & win32.ABS_AUTOHIDE)) {
+  if (!autohide) await win32.setTaskbarAutoHide(true, windows[0]);
+  if (await win32.setTaskbarVisible(visible, windows) && (await win32.getTaskbarState(windows[0]) & win32.ABS_AUTOHIDE)) {
     taskbarRecovery.markApplied();
+    appliedTaskbar = key;
   }
 }
 
-function restoreTaskbar() {
+async function restoreTaskbar() {
   if (!isWin || !taskbarRecovery) return;
+  appliedTaskbar = null;
   const pending = taskbarRecovery.pending();
   if (pending && pending.id !== taskbarRecovery.id) return;
   const r = D().taskbarRestore;
   const original = pending && pending.phase !== 'prepared' ? pending : (r && !r.guarded ? r : null);
   if (original) {
-    if (!win32.hasTaskbar()) return;
-    win32.setTaskbarAutoHide(!!original.autohide);
-    if (!win32.setTaskbarVisible(true) || !win32.hasTaskbar() ||
-        ((win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0) !== !!original.autohide) return;
+    const windows = win32.taskbarWindows();
+    if (!windows.length) return;
+    await win32.setTaskbarAutoHide(!!original.autohide, windows[0]);
+    if (!await win32.setTaskbarVisible(true, windows) || !win32.hasTaskbar() ||
+        ((await win32.getTaskbarState(windows[0]) & win32.ABS_AUTOHIDE) !== 0) !== !!original.autohide) return;
   }
   taskbarRecovery.restored();
   if (r) {
@@ -300,21 +314,32 @@ async function exeIcon(file) {
   return iconCache.get(file);
 }
 
-const pidPath = new Map();
 let lastTick = Date.now();
-async function pollWindows() {
-  if (!isWin) return;
+let windowPollInFlight;
+function pollWindows() {
+  if (!isWin || cleanedUp) return;
+  windowPollInFlight ||= updateWindows().finally(() => { windowPollInFlight = null; });
+  return windowPollInFlight;
+}
+
+async function updateWindows() {
   const own = new Set([process.pid]);
   for (const m of app.getAppMetrics()) own.add(m.pid);
-  let list = [];
-  try { list = win32.listTaskbarWindows(own); } catch (e) { state.errors.windows = String(e.message); }
+  let snapshot;
+  try {
+    snapshot = await windowPoll.poll(own);
+    delete state.errors.windows;
+  } catch (e) {
+    if (!cleanedUp) state.errors.windows = String(e.message);
+    return;
+  }
+  if (cleanedUp) return;
+  const { windows: list, active } = snapshot;
   for (const w of list) {
-    if (!pidPath.has(w.pid)) pidPath.set(w.pid, win32.processPath(w.pid));
-    w.path = pidPath.get(w.pid);
     w.exe = w.path ? path.basename(w.path) : w.cls;
     w.icon = await exeIcon(w.path);
   }
-  const active = win32.foregroundWindow();
+  if (cleanedUp) return;
   // screen time: credit the elapsed time to the foreground app
   const now = Date.now();
   const dt = Math.min(5, (now - lastTick) / 1000);
@@ -540,6 +565,7 @@ const PANEL_SIZES = { calendar: [380, 520], weather: [380, 540], system: [360, 4
 PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
+PANEL_SIZES.trayApps = [328, 320];
 
 let panelShowSeq = 0;
 let panelShowTimer = null;
@@ -593,6 +619,7 @@ function togglePanel(widget, anchorX) {
     });
     panel.setAlwaysOnTop(true, 'screen-saver');
     panel.on('blur', () => {
+      if (panelWidget === 'trayApps' && trayApps?.busy) return;
       if (panel && panel.isVisible() && !panelPendingBounds && !panel.webContents.isDevToolsOpened()) {
         cancelPendingPanelShow();
         panel.hide();
@@ -679,7 +706,7 @@ function syncLoginItem() {
 function applySettings(prev) {
   const s = S();
   layoutBar();
-  if (prev.taskbar !== s.taskbar) applyTaskbar();
+  if (prev.taskbar !== s.taskbar) scheduleTaskbar(true);
   syncLoginItem();
   if (JSON.stringify(prev.commands) !== JSON.stringify(s.commands)) scheduleCommands();
   if (JSON.stringify(prev.weather) !== JSON.stringify(s.weather)) refreshers.weather();
@@ -869,6 +896,37 @@ function registerIpc() {
   ipcMain.handle('wifi:status', (e) => fromNetworkPanel(e) ? networkControls().status() : null);
   ipcMain.handle('wifi:set-radio', (e, enabled) => fromNetworkPanel(e) && networkControls().setRadio(enabled));
   ipcMain.handle('wifi:open', (e, target) => fromNetworkPanel(e) && networkControls().open(target));
+  const fromTrayPanel = (e) => isWin && panelWidget === 'trayApps' && e.sender === panel?.webContents;
+  ipcMain.handle('tray-apps:list', async (e) => {
+    if (!fromTrayPanel(e) || trayApps.busy) return null;
+    const seq = panelShowSeq;
+    const isCurrent = () => seq === panelShowSeq && fromTrayPanel(e);
+    if (taskbarWork) await taskbarWork;
+    if (!isCurrent()) return null;
+    const items = await trayApps.list(isCurrent);
+    if (isCurrent() && panel.isVisible() && !panel.isFocused()) panel.focus();
+    return items;
+  });
+  ipcMain.handle('tray-apps:activate', async (e, id, kind) => {
+    if (!fromTrayPanel(e) || !panel.isVisible()) return false;
+    const seq = panelShowSeq;
+    if (taskbarWork) await taskbarWork;
+    if (seq !== panelShowSeq || !fromTrayPanel(e) || !panel.isVisible()) return false;
+    let hidden = false;
+    const success = await trayApps.activate(id, kind, () => {
+      if (seq !== panelShowSeq || !fromTrayPanel(e)) return false;
+      panel.hide();
+      hidden = true;
+      return true;
+    });
+    if (seq !== panelShowSeq || !fromTrayPanel(e)) return success;
+    if (success) {
+      cancelPendingPanelShow();
+      panelWidget = null;
+      broadcast('panel', null);
+    } else if (hidden) showPanel(seq);
+    return success;
+  });
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
   ipcMain.handle('panel:close', () => { cancelPendingPanelShow(); if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
@@ -907,6 +965,7 @@ function registerPreviewIpc() {
   ipcMain.on('preview:enter-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.enterSurface(); });
   ipcMain.on('preview:leave-surface', (e) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.leaveSurface(); });
   ipcMain.on('preview:slots', (e, slots) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.updateThumbnailSlots(slots); });
+  ipcMain.on('preview:peek', (e, hwnd) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.peekWindow(hwnd); });
   ipcMain.handle('preview:action', (e, hwnd, action) => (windowPreview?.webContentsMatches(e.sender) ? windowPreview.performAction(hwnd, action) : false));
   ipcMain.handle('preview:context-menu', (e, hwnd) => { if (windowPreview?.webContentsMatches(e.sender)) windowPreview.openContextMenu(hwnd); });
 }
@@ -934,11 +993,13 @@ app.whenReady().then(() => {
   if (isWin) {
     taskbarRecovery = new TaskbarRecovery(app.getPath('userData'));
     batteryNative = createBattery();
+    trayApps = new TrayApps(undefined, exeIcon);
   }
   windowPreview = new WindowPreviewController({
     createSurfaceWindow,
     syncBackdrop,
     getBarBounds: () => (bar && !bar.isDestroyed() ? padBounds(bar.getBounds(), -barShadowPadding()) : null),
+    raiseDock: () => { if (bar && !bar.isDestroyed()) bar.setAlwaysOnTop(true, 'screen-saver'); },
     getSettings: S,
     getState: () => state,
     win32,
@@ -953,6 +1014,8 @@ app.whenReady().then(() => {
   migrateBluetoothLayout();
   const volumeMigration = volumeLayoutMigration(S());
   if (volumeMigration) settingsStore.set(volumeMigration);
+  const trayMigration = trayApps && trayLayoutMigration(S());
+  if (trayMigration) settingsStore.set(trayMigration);
   if (firstRun && isWin) {
     settingsStore.set({ pinned: [
       { name: 'File Explorer', path: path.join(process.env.SystemRoot || 'C:/Windows', 'explorer.exe') },
@@ -970,15 +1033,13 @@ app.whenReady().then(() => {
   createBar();
   bar.on('hide', () => windowPreview?.hide());
   createTray();
-  applyTaskbar();
-
   const timers = [
     every(1000, pollWindows),
     every(1000, () => {
       if (panelWidget === 'volume' || hasVolumeWidget(S())) refreshVolume();
     }),
     every(2000, () => { refreshers.system(); runAutomations(); tickPomodoro(); }),
-    every(3000, applyTaskbar),
+    every(3000, scheduleTaskbar),
     every(10000, refreshBattery),
     every(60 * 1000, refreshers.disk),
     every(15 * 60 * 1000, refreshers.weather),
@@ -987,6 +1048,7 @@ app.whenReady().then(() => {
     every(5 * 60 * 1000, refreshers.crypto),
   ];
   stoppers.push(() => timers.forEach(clearInterval));
+  stoppers.push(() => windowPoll.stop());
   stoppers.push(() => companion?.stop());
   stoppers.push(() => windowPreview?.destroy());
   scheduleCommands();
@@ -1000,17 +1062,24 @@ app.whenReady().then(() => {
 });
 
 let cleanedUp = false;
-function cleanup() {
-  if (cleanedUp) return;
+async function cleanup() {
   cleanedUp = true;
   stopBatteryEstimate();
   try { stoppers.forEach((f) => f()); } catch (_) { /* ignore */ }
   try { if (isWin && barHwnd) win32.appBarRemove(barHwnd); } catch (_) { /* ignore */ }
-  try { restoreTaskbar(); } catch (_) { /* ignore */ }
+  try { await taskbarWork; await restoreTaskbar(); } catch (_) { /* recovery worker restores the journal */ }
   try { settingsStore.save(true); dataStore.save(true); } catch (_) { /* ignore */ }
 }
-app.on('before-quit', cleanup);
+let shutdown;
+function quitAfterCleanup(exit) {
+  shutdown ||= cleanup().then(exit);
+}
+app.on('before-quit', (e) => {
+  if (cleanedUp && !shutdown) return;
+  e.preventDefault();
+  quitAfterCleanup(() => { shutdown = null; app.quit(); });
+});
 app.on('window-all-closed', (e) => e.preventDefault());
-process.on('SIGINT', () => { cleanup(); app.exit(0); });
-process.on('SIGTERM', () => { cleanup(); app.exit(0); });
+process.on('SIGINT', () => quitAfterCleanup(() => app.exit(0)));
+process.on('SIGTERM', () => quitAfterCleanup(() => app.exit(0)));
 process.on('uncaughtException', (err) => { console.error(err); });

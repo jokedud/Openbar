@@ -22,6 +22,14 @@ function panelBtn(name, cls, ...kids) {
 const TITLES = { start: 'Launcher (search apps)', weather: 'Weather', system: 'System', network: 'Network', battery: 'Battery', pomodoro: 'Focus timer', todos: 'To-dos', notes: 'Notes', nextEvent: 'Calendar', calendar: 'Calendar', clock: 'Clock & world clocks', media: 'Now playing', github: 'GitHub', devin: 'Devin sessions', crypto: 'Crypto', screenTime: 'Screen time', quick: 'Quick actions' };
 
 const W = {};
+TITLES.trayApps = 'Background apps';
+W.trayApps = () => {
+  if (OB.platform !== 'win32') return null;
+  const button = panelBtn('trayApps', 'tray-apps-button', icon('tray', 17));
+  button.setAttribute('aria-label', TITLES.trayApps);
+  button.setAttribute('aria-expanded', String(openPanel === 'trayApps'));
+  return button;
+};
 TITLES.bluetooth = 'Bluetooth';
 W.bluetooth = () => panelBtn('bluetooth', '', icon('bluetooth', 16));
 TITLES.brightness = 'Brightness';

@@ -1,9 +1,19 @@
 'use strict';
 const assert = require('node:assert/strict');
+const { execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { test } = require('node:test');
+const { promisify } = require('node:util');
 const vm = require('node:vm');
+
+if (process.versions.electron) {
+  runPreviewInteractionCheck().then((result) => {
+    process.stdout.write(JSON.stringify(result) + '\n', () => process.exit(0));
+  }, (error) => {
+    process.stderr.write(`${error.stack}\n`, () => process.exit(1));
+  });
+} else {
+const { test } = require('node:test');
 
 function loadPreviewModule(electronMock) {
   const mod = { exports: {} };
@@ -114,6 +124,11 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
     unregisterThumbnail: (id) => { thumbOps.push(['unreg', id]); return true; },
     queryThumbnailSourceSize: () => ({ width: 1280, height: 720 }),
     updateThumbnail: (id, props) => { thumbOps.push(['upd', id, props]); return true; },
+    windowBoundsForPeek: (h) => (
+      h === 11
+        ? { left: 2020, top: 80, right: 3300, bottom: 800, minimized: true, restoreToMaximized: false }
+        : { left: 100, top: 80, right: 1380, bottom: 800, minimized: false, restoreToMaximized: false }
+    ),
     focusWindow: (h) => thumbOps.push(['focus', h]),
     minimizeWindow: (h) => thumbOps.push(['minimize', h]),
     maximizeWindow: (h) => thumbOps.push(['maximize', h]),
@@ -130,9 +145,37 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
     ],
   };
 
-  const { WindowPreviewController } = loadPreviewModule({
+  const peekWins = [];
+  const { WindowPreviewController, computePeekRect } = loadPreviewModule({
+    BrowserWindow: class MockPeekWin {
+      constructor(opts) {
+        this.bounds = { x: opts.x, y: opts.y, width: opts.width, height: opts.height };
+        this.visible = false;
+        this.destroyed = false;
+        peekWins.push(this);
+      }
+      isDestroyed() { return this.destroyed; }
+      isVisible() { return this.visible; }
+      getBounds() { return this.bounds; }
+      setBounds(b) { this.bounds = b; }
+      setIgnoreMouseEvents() {}
+      setAlwaysOnTop() {}
+      getNativeWindowHandle() { return Buffer.alloc(8); }
+      loadURL() {}
+      showInactive() { this.visible = true; }
+      hide() { this.visible = false; }
+      destroy() { this.destroyed = true; }
+      on() {}
+    },
     Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
-    screen: { getDisplayMatching: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }) },
+    screen: {
+      getDisplayMatching: (r) => (
+        r && r.x >= 1920
+          ? { bounds: { x: 1920, y: 0, width: 1920, height: 1080 }, workArea: { x: 1920, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 }
+          : { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 }
+      ),
+      getPrimaryDisplay: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 }),
+    },
   });
 
   const controller = new WindowPreviewController({
@@ -177,11 +220,48 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
   flushTimers();
   assert.equal(winVisible, true);
 
+  // Hovering a preview card activates full-screen Aero Peek after delay,
+  // switches immediately between cards, and clears on leave.
+  controller.peekWindow(20);
+  assert.equal(peekWins.length, 0);
+  flushTimers();
+  assert.equal(peekWins.length, 1);
+  assert.equal(peekWins[0].isVisible(), true);
+  controller.peekWindow(10);
+  assert.equal(peekWins[0].isVisible(), true);
+  assert.ok(thumbOps.some((op) => op[0] === 'reg' && op[2] === 10));
+  controller.peekWindow(11);
+  assert.deepEqual(peekWins[0].getBounds(), { x: 1920, y: 0, width: 1920, height: 1080 });
+  controller.peekWindow(0);
+  assert.equal(peekWins[0].isVisible(), false);
+
+  assert.deepEqual(
+    { ...computePeekRect({
+      targetBounds: { left: 100, top: 80, right: 1380, bottom: 800 },
+      displayBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+      scaleFactor: 1,
+      sourceSize: { width: 1280, height: 720 },
+    }) },
+    { left: 100, top: 80, right: 1380, bottom: 800 },
+  );
+  assert.deepEqual(
+    { ...computePeekRect({
+      targetBounds: { left: 50, top: 50, right: 400, bottom: 300 },
+      displayBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+      scaleFactor: 1,
+      sourceSize: { width: 1920, height: 1040 },
+      restoreToMaximized: true,
+    }) },
+    { left: 0, top: 0, right: 1920, bottom: 1040 },
+  );
+
   // Performing focus hides preview and activates window
   assert.equal(controller.performAction(20, 'focus'), true);
   assert.equal(winVisible, false);
   assert.ok(thumbOps.some((op) => op[0] === 'focus' && op[1] === 20));
-  assert.equal(thumbOps.filter((op) => op[0] === 'unreg').length, 2);
+  assert.equal(thumbOps.filter((op) => op[0] === 'unreg').length, 5);
 
   // Reopen for Notepad, then close its only window -> syncWindows hides preview
   controller.hoverDock({ hwnds: [20], anchorX: 560, appKey: 'c:\\notepad.exe' });
@@ -242,3 +322,68 @@ test('DWM thumbnail properties use the Win32 ABI layout', { skip: process.platfo
   assert.equal(koffi.offsetof(properties, 'fVisible'), 40);
   assert.equal(koffi.offsetof(properties, 'fSourceClientAreaOnly'), 44);
 });
+
+test('preview card click survives live preview:data updates without detaching the card', async () => {
+  const { stdout } = await promisify(execFile)(require('electron'), [__filename], { timeout: 30000 });
+  const r = JSON.parse(stdout.trim());
+  assert.equal(r.sameNode, true, 'preview card DOM node should be patched in place across live updates');
+  assert.equal(r.title, 'Draft 2 - Notepad');
+  assert.deepEqual(r.actions, [[42, 'focus']]);
+  assert.equal(r.reopenSlotReports > r.beforeReopenSlotReports, true, 'reopening the same windows should re-report thumbnail slots');
+});
+}
+
+async function runPreviewInteractionCheck() {
+  const { app, BrowserWindow, ipcMain } = require('electron');
+  const src = path.join(__dirname, '..', 'src');
+  await app.whenReady();
+  const actions = [];
+  let slotReports = 0;
+  ipcMain.handle('init', () => ({
+    settings: { layout: 'pill', position: 'bottom', style: 'glass', height: 54, margin: 10 },
+    data: {}, state: { glass: 'off' }, platform: 'win32', version: '0.1.2',
+  }));
+  ipcMain.on('surface:bounds', () => {});
+  ipcMain.on('surface:mouse', () => {});
+  ipcMain.on('preview:slots', (_e, slots) => { if (Array.isArray(slots) && slots.length) slotReports++; });
+  ipcMain.handle('preview:action', (_e, hwnd, action) => { actions.push([hwnd, action]); return true; });
+  const win = new BrowserWindow({
+    x: 80, y: 80, width: 320, height: 240,
+    frame: false, transparent: true, show: false, focusable: false, hasShadow: false,
+    webPreferences: { preload: path.join(src, 'preload.js'), backgroundThrottling: false },
+  });
+  await win.loadFile(path.join(src, 'renderer', 'preview.html'));
+  // Wait for OB.init() to register preview:data listener.
+  await win.webContents.executeJavaScript('new Promise((r) => setTimeout(r, 50))');
+  const payload = (title, active) => ({
+    windows: [{ hwnd: 42, title, exe: 'notepad.exe', icon: '', minimized: false, maximized: false, active }],
+    compact: false, switching: true, hasLiveThumbnails: true,
+  });
+  win.webContents.send('preview:data', payload('Draft 1 - Notepad', false));
+  const pos = await win.webContents.executeJavaScript(`new Promise((resolve) => {
+    const wait = () => {
+      const card = document.querySelector('.preview-card');
+      if (!card) return setTimeout(wait, 10);
+      window.__card = card;
+      const r = card.getBoundingClientRect();
+      resolve({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) });
+    };
+    wait();
+  })`);
+  win.webContents.sendInputEvent({ type: 'mouseDown', x: pos.x, y: pos.y, button: 'left', clickCount: 1 });
+  win.webContents.send('preview:data', payload('Draft 2 - Notepad', true));
+  await new Promise((r) => setTimeout(r, 30));
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: pos.x, y: pos.y, button: 'left', clickCount: 1 });
+  await new Promise((r) => setTimeout(r, 50));
+  const check = await win.webContents.executeJavaScript(`({
+    sameNode: document.querySelector('.preview-card') === window.__card,
+    title: document.querySelector('.preview-title')?.textContent,
+  })`);
+  const beforeReopenSlotReports = slotReports;
+  win.webContents.send('preview:data', { ...payload('Draft 2 - Notepad', true), switching: false });
+  await win.webContents.executeJavaScript('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
+  await new Promise((r) => setTimeout(r, 30));
+  const reopenSlotReports = slotReports;
+  win.destroy();
+  return { actions, beforeReopenSlotReports, reopenSlotReports, ...check };
+}
