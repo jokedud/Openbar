@@ -63,7 +63,9 @@ function patchChildren(parent, nextKids) {
 }
 function setHead(title, ...actions) {
   if ($('title').textContent !== title) $('title').textContent = title;
-  patchChildren($('actions'), actions.filter(Boolean));
+  const container = $('actions');
+  patchChildren(container, actions.filter(Boolean));
+  return container.children;
 }
 const actionBtn = (ic, title, onclick) => h('button', { class: 'btn icon', title, onclick }, icon(ic, 14));
 const settingsBtn = (tab) => actionBtn('settings', 'Settings', () => api.invoke('settings:open', tab));

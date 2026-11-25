@@ -36,8 +36,7 @@ function mountDevinChat(body, back) {
     'Approved screenshots may be sent to the model. Devin CLI runs with your Windows account’s permissions. OpenBar asks before using its desktop tools.');
   const root = h('section', { class: 'devin-content devin-chat' }, head, status, disclaimer, timeline, approval, compose);
   body.append(root);
-  const sessions = h('button', { class: 'btn', onclick: back }, 'Sessions');
-  setHead('Chat with Devin', sessions, actionBtn('plus', 'Start a new chat', async () => {
+  const [sessions] = setHead('Chat with Devin', h('button', { class: 'btn', onclick: back }, 'Sessions'), actionBtn('plus', 'Start a new chat', async () => {
     entry.value = '';
     await invoke('reset').catch(() => {});
     check();

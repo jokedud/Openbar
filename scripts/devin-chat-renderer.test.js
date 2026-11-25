@@ -14,7 +14,10 @@ test('Sessions preserves idle chat and cannot hide a pending approval', async ()
   let sessions, paint, navigations = 0;
   const context = {
     h, icon() {}, actionBtn() {}, requestAnimationFrame() {},
-    setHead: (_title, button) => { sessions = button; },
+    setHead: (_title, button) => {
+      sessions = { ...button };
+      return [sessions];
+    },
     api: {
       invoke: async (channel) => { invoked.push(channel); return {}; },
       on: (_channel, update) => { paint = update; return () => {}; },
