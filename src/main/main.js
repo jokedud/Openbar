@@ -14,7 +14,7 @@ app.setAppUserModelId('xyz.openbar.app');
 
 let settingsStore, dataStore;
 let bar = null, panel = null, settingsWin = null, tray = null;
-let barHwnd = 0;
+let barHwnd = 0, panelHwnd = 0;
 let panelWidget = null;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0,
@@ -61,8 +61,30 @@ let lastContentWidth = 0;
 function layoutBar() {
   if (!bar) return;
   bar.setBounds(barBounds(lastContentWidth));
+  clipGlass(bar, barHwnd, S().margin, barRadius(S().height));
   reserveSpace();
   bar.setAlwaysOnTop(true, 'screen-saver');
+}
+
+// ---------------- glass ----------------
+// Same ratios as --bar-r / --panel-r in theme.css and common.js, so the blur region matches the CSS shape.
+const barRadius = (height) => Math.round(height * 0.3);
+const PANEL_RADIUS = 18;
+let glassMode = 'off';
+function enableGlass(win, hwnd, mode) {
+  if (!isWin || !hwnd) return;
+  try { glassMode = win32.setBackdrop(hwnd, mode); } catch (e) { glassMode = 'off'; console.error('backdrop', e); }
+  state.glass = glassMode;
+  broadcast('state', { glass: glassMode });
+}
+function clipGlass(win, hwnd, inset, radius) {
+  if (!isWin || !hwnd || glassMode === 'off') return;
+  const { width, height } = win.getContentBounds();
+  const k = screen.getDisplayMatching(win.getBounds()).scaleFactor;
+  const px = (v) => Math.round(v * k);
+  try {
+    win32.setRoundRegion(hwnd, { x: px(inset), y: px(inset), width: px(width - 2 * inset), height: px(height - 2 * inset), radius: px(radius) });
+  } catch (e) { console.error('region', e); }
 }
 
 // ---------------- Windows taskbar ----------------
@@ -305,7 +327,7 @@ function createBar() {
   bar.setAlwaysOnTop(true, 'screen-saver');
   bar.loadFile(path.join(RENDERER, 'bar.html'));
   bar.once('ready-to-show', () => { bar.showInactive(); layoutBar(); });
-  if (isWin) barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle());
+  if (isWin) { barHwnd = win32.hwndFromBuffer(bar.getNativeWindowHandle()); enableGlass(bar, barHwnd, 'blur'); }
   bar.on('closed', () => { bar = null; });
 }
 
@@ -330,9 +352,13 @@ function togglePanel(widget, anchorX) {
     panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
     panel.on('closed', () => { panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
+    panelHwnd = isWin ? win32.hwndFromBuffer(panel.getNativeWindowHandle()) : 0;
+    enableGlass(panel, panelHwnd, 'acrylic');
+    panel.on('show', () => clipGlass(panel, panelHwnd, 0, PANEL_RADIUS));
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
     panel.setBounds({ x, y, width: w, height: h });
+    clipGlass(panel, panelHwnd, 0, PANEL_RADIUS);
     panel.webContents.send('panel:widget', widget);
     panel.show(); panel.focus();
   }
