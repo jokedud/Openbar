@@ -49,6 +49,7 @@ const GetWindowTextW = user32.func('int __stdcall GetWindowTextW(intptr_t hWnd, 
 const GetWindowTextLengthW = user32.func('int __stdcall GetWindowTextLengthW(intptr_t hWnd)');
 const GetWindowLongPtrW = user32.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t hWnd, int idx)');
 const GetWindow = user32.func('intptr_t __stdcall GetWindow(intptr_t hWnd, uint32_t cmd)');
+const GetAncestor = user32.func('intptr_t __stdcall GetAncestor(intptr_t hWnd, uint32_t flags)');
 const GetWindowThreadProcessId = user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hWnd, _Out_ uint32_t *pid)');
 const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow()');
 const GetWindowRect = user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)');
@@ -65,6 +66,9 @@ const FindWindowExW = user32.func('intptr_t __stdcall FindWindowExW(intptr_t par
 const GetClassNameW = user32.func('int __stdcall GetClassNameW(intptr_t hWnd, _Out_ uint8_t *buf, int max)');
 const PostMessageW = user32.func('bool __stdcall PostMessageW(intptr_t hWnd, uint32_t msg, uintptr_t wp, intptr_t lp)');
 const keybd_event = user32.func('void __stdcall keybd_event(uint8_t vk, uint8_t scan, uint32_t flags, uintptr_t extra)');
+const SetCursorPos = user32.func('bool __stdcall SetCursorPos(int x, int y)');
+const WindowFromPoint = user32.func('intptr_t __stdcall WindowFromPoint(POINT pt)');
+const SystemParametersInfoW = user32.func('bool __stdcall SystemParametersInfoW(uint32_t action, uint32_t param, _Out_ uint32_t *value, uint32_t flags)');
 const LockWorkStation = user32.func('bool __stdcall LockWorkStation()');
 const AllowSetForegroundWindow = user32.func('bool __stdcall AllowSetForegroundWindow(uint32_t pid)');
 
@@ -93,6 +97,9 @@ const WS_EX_TOOLWINDOW = 0x80;
 const WS_EX_APPWINDOW = 0x40000;
 const WS_EX_NOACTIVATE = 0x8000000;
 const GW_OWNER = 4;
+const GA_ROOT = 2;
+const SPI_GETMOUSEWHEELROUTING = 0x201c;
+const MOUSEWHEEL_ROUTING_MOUSE_POS = 2;
 const DWMWA_CLOAKED = 14;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 const SW_HIDE = 0, SW_MAXIMIZE = 3, SW_SHOWNA = 8, SW_RESTORE = 9, SW_MINIMIZE = 6, SW_SHOW = 5;
@@ -291,6 +298,62 @@ function sendCombo(vks) {
   for (const k of [...vks].reverse()) keybd_event(k, 0, 2, 0);
 }
 
+function moveDesktopMouse(point, forInput) {
+  if (forInput && processId(WindowFromPoint(point)) === process.pid) throw new Error('OpenBar cannot act on its own controls');
+  if (!SetCursorPos(point.x, point.y)) throw new Error('Could not move the pointer');
+}
+
+let desktopInput;
+function sendDesktopInput(events) {
+  if (!desktopInput) {
+    const mouse = koffi.struct({
+      dx: 'long', dy: 'long', mouseData: 'uint32_t', dwFlags: 'uint32_t', time: 'uint32_t', dwExtraInfo: 'uintptr_t',
+    });
+    const keyboard = koffi.struct({ wVk: 'uint16_t', wScan: 'uint16_t', dwFlags: 'uint32_t', time: 'uint32_t', dwExtraInfo: 'uintptr_t' });
+    const input = koffi.struct({ type: 'uint32_t', u: koffi.union({ mi: mouse, ki: keyboard }) });
+    const send = user32.func('__stdcall', 'SendInput', 'uint32_t', ['uint32_t', koffi.pointer(input), 'int']);
+    desktopInput = (values) => send(values.length, values, koffi.sizeof(input));
+  }
+  if (desktopInput(events) !== events.length) throw new Error('Windows refused the input');
+}
+
+function mouseInput(dwFlags, mouseData = 0) {
+  return { type: 0, u: { mi: { dx: 0, dy: 0, mouseData: mouseData >>> 0, dwFlags, time: 0, dwExtraInfo: 0 } } };
+}
+
+function clickDesktopMouse(button) {
+  const down = button === 'right' ? 0x08 : 0x02;
+  sendDesktopInput([mouseInput(down), mouseInput(down << 1)]);
+}
+
+function scrollDesktopMouse(point, steps) {
+  const hwnd = GetAncestor(WindowFromPoint(point), GA_ROOT);
+  const pid = hwnd && processId(hwnd);
+  if (!pid || pid === process.pid) throw new Error('No eligible desktop scroll target');
+  const routing = [0];
+  const hoverScroll = SystemParametersInfoW(SPI_GETMOUSEWHEELROUTING, 0, routing, 0) && routing[0] === MOUSEWHEEL_ROUTING_MOUSE_POS;
+  if (!hoverScroll && !activateDesktopInputTarget(hwnd, pid)) throw new Error('Could not focus the desktop scroll target');
+  sendDesktopInput([mouseInput(0x0800, steps * 120)]);
+}
+
+function keyInputs(wVk, wScan, flags) {
+  return [flags, flags | 0x02].map((dwFlags) => ({ type: 1, u: { ki: { wVk, wScan, dwFlags, time: 0, dwExtraInfo: 0 } } }));
+}
+
+function typeDesktopText(text) {
+  sendDesktopInput(text.split('').flatMap((c) => keyInputs(0, c.charCodeAt(0), 0x04)));
+}
+
+function pressDesktopKey(vk) {
+  sendDesktopInput(keyInputs(vk, 0, vk >= 0x21 && vk <= 0x2e ? 0x01 : 0));
+}
+
+function activateDesktopInputTarget(hwnd, pid) {
+  if (!IsWindow(hwnd) || pid === process.pid || processId(hwnd) !== pid) return false;
+  if (foregroundWindow() !== hwnd) SetForegroundWindow(hwnd);
+  return foregroundWindow() === hwnd;
+}
+
 // ---- Windows taskbar ----
 function taskbarWindows() {
   const list = [];
@@ -387,6 +450,7 @@ module.exports = {
   registerThumbnail, unregisterThumbnail, queryThumbnailSourceSize, updateThumbnail, windowBoundsForPeek,
   foregroundWindow, foregroundWindowBounds, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
+  windowText, moveDesktopMouse, clickDesktopMouse, scrollDesktopMouse, typeDesktopText, pressDesktopKey, activateDesktopInputTarget,
   getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarWindows, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
   isLoginItemMissing,

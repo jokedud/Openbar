@@ -1,7 +1,7 @@
 'use strict';
 const path = require('path');
 const { stat } = require('fs/promises');
-const { app, BrowserWindow, dialog, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor, safeStorage } = require('electron');
+const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, shell, Notification, Tray, Menu, nativeImage, nativeTheme, powerMonitor, safeStorage } = require('electron');
 const { JsonFile, DEFAULT_SETTINGS, DEFAULT_DATA } = require('./store');
 const { shortcutTarget } = require('./custom-tabs');
 const TaskbarRecovery = require('./taskbar-recovery');
@@ -11,6 +11,8 @@ const calendar = require('./calendar');
 const startmenu = require('./startmenu');
 const devin = require('./devin');
 const DevinCompanion = require('./devin-companion');
+const { DevinChat } = require('./devin-chat');
+const { createWindowsDesktop } = require('./devin-desktop');
 const { bluetoothLayoutMigration, registerBluetoothIpc } = require('./bluetooth');
 const { createVolume, volumeChange, UNAVAILABLE: VOLUME_UNAVAILABLE } = require('./volume');
 const { hasVolumeWidget, volumeLayoutMigration } = require('./volume-layout');
@@ -52,6 +54,7 @@ let barHwnd = 0;
 let panelWidget = null;
 let overflowItems = [];
 let devinPanelSize = null;
+let devinChat, devinDesktopTarget;
 let batteryNative, batteryEstimate, trayApps;
 const state = {
   system: null, disk: null, media: null, net: null, windows: [], activeHwnd: 0, recentHwnds: [], windowAppOrder: [],
@@ -348,6 +351,7 @@ async function updateWindows() {
   const dt = Math.min(5, (now - lastTick) / 1000);
   lastTick = now;
   const fg = list.find((w) => w.hwnd === active);
+  if (fg && devinChat) devinDesktopTarget = fg;
   if (fg && powerMonitor.getSystemIdleTime() < 120) {
     const day = localDay();
     const st = D().screenTime;
@@ -602,6 +606,8 @@ function closePanel() {
 
 function togglePanel(widget, anchorX, items) {
   windowPreview?.hide();
+  if (panelWidget === 'devin' && widget !== 'devin' && devinChat?.busy) devinChat.stop();
+  if (widget === 'devin' && isWin) rememberDevinDesktopTarget();
   if (panelWidget === 'battery') stopBatteryEstimate();
   if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) {
     closePanel();
@@ -634,6 +640,7 @@ function togglePanel(widget, anchorX, items) {
     });
     panel.setAlwaysOnTop(true, 'screen-saver');
     panel.on('blur', () => {
+      if (panelWidget === 'devin' && devinChat?.busy) { rememberDevinDesktopTarget(); return; }
       if (panelWidget === 'trayApps' && trayApps?.busy) return;
       if (panel && panel.isVisible() && !panelPendingBounds && !panel.webContents.isDevToolsOpened()) {
         cancelPendingPanelShow();
@@ -642,6 +649,7 @@ function togglePanel(widget, anchorX, items) {
         broadcast('panel', null);
       }
     });
+    panel.on('hide', () => { if (panelWidget === 'devin' && devinChat?.busy) devinChat.stop(); });
     panel.on('hide', () => { if (panelWidget === 'volume') panel.webContents.send('volume:hidden'); });
     panel.on('hide', stopBatteryEstimate);
     panel.on('closed', () => { cancelPendingPanelShow(); stopBatteryEstimate(); panel = null; panelWidget = null; });
@@ -791,7 +799,40 @@ function listCloudDevinSessions(cursor) {
   }
 }
 
+function rememberDevinDesktopTarget() {
+  const hwnd = win32.foregroundWindow();
+  const pid = win32.processId(hwnd);
+  if (!pid || pid === process.pid) return;
+  const title = win32.windowText(hwnd);
+  if (title) devinDesktopTarget = { hwnd, pid, title };
+}
+
+function devinChatPanel() { return panelWidget === 'devin' && panel && !panel.isDestroyed() ? panel : null; }
+function devinChatVisible() { return !!devinChatPanel()?.isVisible(); }
+
+function registerDevinChatIpc() {
+  const fromPanel = (e) => {
+    const contents = devinChatPanel()?.webContents;
+    return isWin && contents && e.sender === contents && e.senderFrame === contents.mainFrame;
+  };
+  const fromVisiblePanel = (e) => devinChatVisible() && fromPanel(e);
+  const chat = () => (devinChat ||= new DevinChat({
+    cwd: app.getPath('userData'),
+    visible: devinChatVisible,
+    prepare: createWindowsDesktop({ screen, desktopCapturer, win32, target: () => devinDesktopTarget }),
+    emit: (state) => { if (devinChatVisible()) panel.webContents.send('devin:chat-update', state); },
+  }));
+  ipcMain.handle('devin:chat-status', (e) => fromPanel(e) ? chat().check() : null);
+  ipcMain.handle('devin:chat-send', (e, text) => { if (fromVisiblePanel(e)) void chat().send(text); });
+  ipcMain.handle('devin:chat-approve', (e, id, decision) => {
+    if (fromVisiblePanel(e) && panel.isFocused()) chat().decide(id, decision);
+  });
+  ipcMain.handle('devin:chat-stop', (e) => { if (fromVisiblePanel(e)) chat().stop(); });
+  ipcMain.handle('devin:chat-reset', (e) => { if (fromVisiblePanel(e)) chat().reset(); });
+}
+
 function registerDevinIpc() {
+  registerDevinChatIpc();
   ipcMain.handle('devin:config', devinConfigInfo);
   ipcMain.handle('devin:save', (e, key, organization) => {
     if (e.sender !== settingsWin?.webContents) return { error: 'storage' };
@@ -1105,6 +1146,7 @@ app.whenReady().then(() => {
   stoppers.push(() => timers.forEach(clearInterval));
   stoppers.push(() => windowPoll.stop());
   stoppers.push(() => companion?.stop());
+  stoppers.push(() => devinChat?.stop());
   stoppers.push(() => windowPreview?.destroy());
   scheduleCommands();
   if (isWin) stoppers.push(sources.startHelper(onHelper));
