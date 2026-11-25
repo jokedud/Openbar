@@ -122,19 +122,27 @@ function applyTaskbar() {
   const mode = S().taskbar;
   if (mode === 'keep') { restoreTaskbar(); return; }
   if (!win32.hasTaskbar()) return;
+  const visible = mode !== 'hide';
   const original = D().taskbarRestore;
   const autohide = (win32.getTaskbarState() & win32.ABS_AUTOHIDE) !== 0;
-  const baseline = pending?.autohide ?? (original && !original.guarded ? !!original.autohide : autohide);
+  const alreadySet = autohide && win32.taskbarVisibilityIs(visible);
+  const legacy = original && !original.guarded;
+  if (alreadySet && !legacy && pending?.phase !== 'applying') return;
+  const baseline = legacy ? !!original.autohide : autohide;
   if (!taskbarRecovery.arm(baseline)) {
     if (original?.guarded && pending?.id === original.id) restoreTaskbar();
     return;
   }
-  if (!original?.guarded || original.id !== pending?.id) {
+  if (pending?.phase === 'prepared') {
     dataStore.set({ taskbarRestore: { autohide: baseline, guarded: true, id: taskbarRecovery.id } });
     dataStore.save(true);
   }
+  // Journal intent before touching Explorer; a crash during the Win32 calls still needs recovery.
+  if (!taskbarRecovery.recordOverride(baseline)) return;
   if (!autohide) win32.setTaskbarAutoHide(true);
-  win32.setTaskbarVisible(mode !== 'hide');
+  if (win32.setTaskbarVisible(visible) && (win32.getTaskbarState() & win32.ABS_AUTOHIDE)) {
+    taskbarRecovery.markApplied();
+  }
 }
 
 function restoreTaskbar() {
@@ -142,7 +150,7 @@ function restoreTaskbar() {
   const pending = taskbarRecovery.pending();
   if (pending && pending.id !== taskbarRecovery.id) return;
   const r = D().taskbarRestore;
-  const original = pending || (r && !r.guarded ? r : null);
+  const original = pending && pending.phase !== 'prepared' ? pending : (r && !r.guarded ? r : null);
   if (original) {
     if (!win32.hasTaskbar()) return;
     win32.setTaskbarAutoHide(!!original.autohide);

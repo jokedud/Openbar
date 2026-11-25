@@ -196,6 +196,11 @@ function hasTaskbar() {
   return !!FindWindowW('Shell_TrayWnd', null);
 }
 
+function taskbarVisibilityIs(visible) {
+  const windows = taskbarWindows();
+  return windows.length > 0 && windows.every((h) => IsWindowVisible(h) === visible);
+}
+
 // ---- AppBar registration: reserves screen space so maximised windows don't cover the dock ----
 function appBarRegister(hwnd) {
   const abd = newAbd(hwnd);
@@ -246,6 +251,6 @@ function setRoundRegion(hWnd, r) {
 module.exports = {
   listTaskbarWindows, focusWindow, minimizeWindow, closeWindow, foregroundWindow, IsWindow: (h) => IsWindow(h),
   processPath, processId, sendCombo, LockWorkStation: () => LockWorkStation(), AllowSetForegroundWindow,
-  getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, ABS_AUTOHIDE,
+  getTaskbarState, setTaskbarAutoHide, setTaskbarVisible, hasTaskbar, taskbarVisibilityIs, ABS_AUTOHIDE,
   appBarRegister, appBarSetPos, appBarRemove, hwndFromBuffer, setBackdrop, setRoundRegion,
 };

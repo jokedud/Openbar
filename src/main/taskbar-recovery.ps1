@@ -102,6 +102,10 @@ if ($isOwner) {
 }
 
 while ($state = Read-State) {
+  if ($state.phase -eq 'prepared' -or (-not $state.phase -and -not (Test-Path -LiteralPath $ready))) {
+    Remove-Item -LiteralPath $file
+    break
+  }
   if (($isOwner -and (Test-Path -LiteralPath $release)) -or [OpenBarRecovery]::Restore([bool]$state.autohide)) {
     [OpenBarRecovery]::RestorePersisted([bool]$state.autohide)
     Remove-Item -LiteralPath $file

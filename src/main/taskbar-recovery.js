@@ -29,6 +29,24 @@ class TaskbarRecovery {
     catch (err) { if (err.code !== 'ENOENT') throw err; return null; }
   }
 
+  write(state) {
+    const tmp = this.file + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(state), { flush: true });
+    fs.renameSync(tmp, this.file);
+  }
+
+  recordOverride(autohide) {
+    const state = this.pending();
+    if (state?.id !== this.id || this.releasing || !this.armed) return false;
+    if (state.phase === 'prepared') this.write({ ...state, autohide, phase: 'applying' });
+    return true;
+  }
+
+  markApplied() {
+    const state = this.pending();
+    if (state?.id === this.id && state.phase === 'applying') this.write({ ...state, phase: 'applied' });
+  }
+
   resume(state) {
     if (state.id === this.id || this.resuming === state.id) return;
     this.resuming = state.id;
@@ -48,9 +66,7 @@ class TaskbarRecovery {
     if (!state) {
       if (this.starting) return false;
       fs.mkdirSync(this.folder, { recursive: true });
-      const tmp = this.file + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ id: this.id, pid: process.pid, autohide }), { flush: true });
-      fs.renameSync(tmp, this.file);
+      this.write({ id: this.id, pid: process.pid, autohide, phase: 'prepared' });
       this.starting = true;
       const id = this.id;
       launchWorker(this.folder, id, '-Register', (err) => {
