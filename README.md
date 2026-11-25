@@ -4,7 +4,7 @@ A free, open-source smart dock and taskbar replacement for Windows 10/11, with l
 
 [![Animated preview of OpenBar switching between dock tabs; click to watch the introduction](docs/media/openbar-preview.gif)](docs/media/openbar-intro.mp4?raw=true)
 
-[Watch the 45-second introduction (MP4, with sound)](docs/media/openbar-intro.mp4?raw=true) · Music: “Dog Shakes Hand” by Dog Plays Dead.
+[Watch the 50-second introduction (MP4, with sound)](docs/media/openbar-intro.mp4?raw=true) · Music: “Dog Shakes Hand” by Dog Plays Dead.
 
 ## Download
 
@@ -18,6 +18,7 @@ The builds are not code-signed yet, so Windows SmartScreen may warn you. Click *
 ## Features
 
 - **Dock**: pinned apps and running windows with icons, an active indicator and window counts. Click to focus, click again to minimize, click repeatedly to cycle a group, middle-click for a new window, right-click for pin/close/minimize. Drag pinned apps to reorder them.
+- **Window previews**: hover over a running app to see live thumbnails of its open windows. Click a thumbnail to focus that window, or close it from the preview.
 - **App launcher**: searchable grid of every Start Menu app, with keyboard navigation. Ctrl+Enter pins the selected app.
 - **Taskbar control**: hides or auto-hides the Windows taskbar and reserves screen space so maximized windows stop at the bar. An independent Windows recovery task restores the original taskbar after OpenBar exits or crashes. If OpenBar cannot start that recovery task, it leaves the Windows taskbar alone.
 - **Widgets**: clock and world clocks, next meeting with one-click **Join** (Zoom, Meet, Teams, Webex, Whereby), month calendar and agenda from any iCal URL, weather with hourly and 7-day forecasts (Open-Meteo, no key), CPU/RAM/disk, network speed, battery, now playing with controls (any app in the Windows media flyout), focus timer, to-dos, notes, GitHub activity, crypto prices, screen time per app, and quick actions (lock, sleep, screenshot, emoji, Task Manager).
@@ -36,6 +37,10 @@ The builds are not code-signed yet, so Windows SmartScreen may warn you. Click *
 
 ![The floating glass dock on Home with pinned apps, weather, tray controls, and a pixel otter](docs/media/floating-dock.png)
 ![The same dock on the Studio tab with Notes, Focus, To-dos, and a project shortcut](docs/media/custom-tabs.png)
+
+**Window previews.** Hover over a running app to see its open windows side by side.
+
+![Two live File Explorer thumbnails above the grouped Explorer icon on the dock](docs/media/hover-window-previews.png)
 
 **Tray controls.** These screenshots show the Windows Settings shortcuts and fallback states on a desktop without the corresponding hardware.
 
