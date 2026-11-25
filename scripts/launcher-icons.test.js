@@ -23,7 +23,7 @@ test('launcher shortcut icons prefer the app icon and fall back to the shortcut'
     process: { platform: 'win32' },
     require: (name) => {
       if (name === 'electron') return { app, shell };
-      if (name === './shortcut-icon') return { shortcutIcon: () => '' };
+      if (name === './shortcut-icon') return { shortcutIcon: async () => '' };
       return require(name);
     },
   });
@@ -46,7 +46,7 @@ test('launcher prefers the Windows Shell icon for a shortcut with an icon resour
         app: { getFileIcon: async () => ({ isEmpty: () => false, toDataURL: () => 'generic-white-shortcut' }) },
       };
       if (name === './shortcut-icon') return {
-        shortcutIcon(file) { lookups.push(file); return 'resolved-icon'; },
+        async shortcutIcon(file) { lookups.push(file); return 'resolved-icon'; },
       };
       return require(name);
     },

@@ -11,7 +11,7 @@ async function iconFor(file) {
   if (iconCache.has(file)) return iconCache.get(file);
   if (process.platform === 'win32' && /\.(lnk|url|appref-ms)$/i.test(file)) {
     try {
-      const url = require('./shortcut-icon').shortcutIcon(file);
+      const url = await require('./shortcut-icon').shortcutIcon(file);
       if (url) { iconCache.set(file, url); return url; }
     } catch (_) { /* fall back to Electron's icon lookup */ }
   }
