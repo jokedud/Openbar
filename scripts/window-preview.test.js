@@ -124,7 +124,11 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
     unregisterThumbnail: (id) => { thumbOps.push(['unreg', id]); return true; },
     queryThumbnailSourceSize: () => ({ width: 1280, height: 720 }),
     updateThumbnail: (id, props) => { thumbOps.push(['upd', id, props]); return true; },
-    windowBoundsForPeek: () => ({ left: 100, top: 80, right: 1380, bottom: 800, minimized: false, restoreToMaximized: false }),
+    windowBoundsForPeek: (h) => (
+      h === 11
+        ? { left: 2020, top: 80, right: 3300, bottom: 800, minimized: true, restoreToMaximized: false }
+        : { left: 100, top: 80, right: 1380, bottom: 800, minimized: false, restoreToMaximized: false }
+    ),
     focusWindow: (h) => thumbOps.push(['focus', h]),
     minimizeWindow: (h) => thumbOps.push(['minimize', h]),
     maximizeWindow: (h) => thumbOps.push(['maximize', h]),
@@ -165,7 +169,11 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
     },
     Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
     screen: {
-      getDisplayMatching: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 }),
+      getDisplayMatching: (r) => (
+        r && r.x >= 1920
+          ? { bounds: { x: 1920, y: 0, width: 1920, height: 1080 }, workArea: { x: 1920, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 }
+          : { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 }
+      ),
       getPrimaryDisplay: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1 }),
     },
   });
@@ -222,6 +230,8 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
   controller.peekWindow(10);
   assert.equal(peekWins[0].isVisible(), true);
   assert.ok(thumbOps.some((op) => op[0] === 'reg' && op[2] === 10));
+  controller.peekWindow(11);
+  assert.deepEqual(peekWins[0].getBounds(), { x: 1920, y: 0, width: 1920, height: 1080 });
   controller.peekWindow(0);
   assert.equal(peekWins[0].isVisible(), false);
 
@@ -251,7 +261,7 @@ test('WindowPreviewController handles hover open delay, instant switching, surfa
   assert.equal(controller.performAction(20, 'focus'), true);
   assert.equal(winVisible, false);
   assert.ok(thumbOps.some((op) => op[0] === 'focus' && op[1] === 20));
-  assert.equal(thumbOps.filter((op) => op[0] === 'unreg').length, 4);
+  assert.equal(thumbOps.filter((op) => op[0] === 'unreg').length, 5);
 
   // Reopen for Notepad, then close its only window -> syncWindows hides preview
   controller.hoverDock({ hwnds: [20], anchorX: 560, appKey: 'c:\\notepad.exe' });

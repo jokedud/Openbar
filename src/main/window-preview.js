@@ -420,7 +420,7 @@ class WindowPreviewController {
     const targetBounds = typeof this.win32.windowBoundsForPeek === 'function' ? this.win32.windowBoundsForPeek(hwnd) : null;
     const barRect = this.getBarBounds();
     let display = barRect ? screen.getDisplayMatching(barRect) : screen.getPrimaryDisplay();
-    if (targetBounds && !targetBounds.minimized && targetBounds.right > targetBounds.left && targetBounds.bottom > targetBounds.top) {
+    if (targetBounds && targetBounds.right > targetBounds.left && targetBounds.bottom > targetBounds.top) {
       const phys = { x: targetBounds.left, y: targetBounds.top, width: targetBounds.right - targetBounds.left, height: targetBounds.bottom - targetBounds.top };
       const dip = typeof screen.screenToDipRect === 'function' ? screen.screenToDipRect(null, phys) : phys;
       display = screen.getDisplayMatching(dip) || display;
