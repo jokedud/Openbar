@@ -71,11 +71,11 @@
       this.frame = 0;
     }
 
-    pixels(x, y, rows, clipLeft = -PERCH_GUTTER, clipRight = 48 - PERCH_GUTTER) {
+    pixels(x, y, rows) {
       rows.forEach((row, dy) => {
         for (let dx = 0; dx < row.length; dx++) {
           const color = palette[row[dx]] || newColors[row[dx]];
-          if (!color || x + dx < clipLeft || x + dx >= clipRight || y + dy >= 24) continue;
+          if (!color || x + dx < -PERCH_GUTTER || x + dx >= 48 - PERCH_GUTTER || y + dy >= 24) continue;
           this.ctx.fillStyle = color;
           this.ctx.fillRect(x + dx, y + dy, 1, 1);
         }
@@ -139,15 +139,21 @@
       this.rect(left - 1, top + 5, 1, 15, 'b');
       this.rect(right, top + 5, 1, 15, 'q');
       if (visible) {
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(-PERCH_GUTTER, 0, PERCH_GUTTER, 22);
+        this.ctx.rect(0, 0, 22, top);
+        this.ctx.rect(left, top + 5, right - left, 15);
+        this.ctx.clip();
         const step = walk ? n % 3 : 0;
         const base = frames.idle[step].slice(0, 19).concat(LEGS[step].map((row) => '.....' + row + '........'));
-        this.pixels(walk, walk ? 1 : 0, base, -PERCH_GUTTER, n >= 18 ? right : 48 - PERCH_GUTTER);
+        this.pixels(walk, walk ? 1 : 0, base);
+        if (pressed && !entering) this.pixels(13, 11, ['KKFFK', 'KFFK ', 'KK   ']);
+        this.ctx.restore();
       }
-      if (n >= 18) this.rect(2, top + 5, left - 2, 15, 'm');
       this.rect(8, top + 1, 6, 3, 'q');
       this.pixels(9, top + 1, entering ? [' a ', 'aaa', '   '] : ['   ', 'aaa', ' a ']);
       this.rect(18, top + 9, 2, 2, pressed && !entering ? 'p' : 'a');
-      if (pressed && !entering) this.pixels(13, 11, ['KKFFK', 'KFFK ', 'KK   ']);
       this.rect(0, top + 20, 22, 1, 'a');
       this.ctx.restore();
       if (depth < 24) this.rect(0, 22, 22, 1, 'd');
