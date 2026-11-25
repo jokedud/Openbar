@@ -220,6 +220,9 @@ function registerSurfaceIpc() {
     if (ignore) win.setIgnoreMouseEvents(true, { forward: true });
     else win.setIgnoreMouseEvents(false);
   });
+  ipcMain.on('panel:ready', (e, seq) => {
+    if (panel && !panel.isDestroyed() && e.sender === panel.webContents) showPanel(seq);
+  });
 }
 
 // ---------------- Windows taskbar ----------------
@@ -538,10 +541,30 @@ PANEL_SIZES.bluetooth = [330, 294];
 PANEL_SIZES.brightness = [336, 270];
 PANEL_SIZES.volume = [324, 232];
 
+let panelShowSeq = 0;
+let panelShowTimer = null;
+function cancelPendingPanelShow() {
+  panelShowSeq++;
+  if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
+}
+function showPanel(seq) {
+  if (seq !== panelShowSeq || !panel || panel.isDestroyed() || !panelWidget) return;
+  if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
+  if (!panel.isVisible()) panel.show();
+  panel.focus();
+  syncBackdrop(panel);
+}
+
 function togglePanel(widget, anchorX) {
   windowPreview?.hide();
   if (panelWidget === 'battery') stopBatteryEstimate();
-  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) { panel.hide(); panelWidget = null; broadcast('panel', null); return; }
+  if (panel && !panel.isDestroyed() && panel.isVisible() && panelWidget === widget) {
+    cancelPendingPanelShow();
+    panel.hide();
+    panelWidget = null;
+    broadcast('panel', null);
+    return;
+  }
   const power = widget === 'battery' ? batteryNative?.read() : null;
   const [w, preferredH] = power?.present === false ?
     [PANEL_SIZES.battery[0], 266] : PANEL_SIZES[widget] || [360, 420];
@@ -558,22 +581,37 @@ function togglePanel(widget, anchorX) {
   const bounds = padBounds({ x, y, width: w, height: h }, SHADOW_PADDING);
   devinPanelSize = widget === 'devin' ? { maxHeight: h, atTop } : null;
   if (!panel || panel.isDestroyed()) {
+    cancelPendingPanelShow();
     panel = createSurfaceWindow({
       ...bounds, frame: false, transparent: true, resizable: false, skipTaskbar: true, alwaysOnTop: true,
       show: false, hasShadow: false, title: 'OpenBar panel', icon: ICON, webPreferences,
     });
     panel.setAlwaysOnTop(true, 'screen-saver');
-    panel.on('blur', () => { if (panel && !panel.webContents.isDevToolsOpened()) { panel.hide(); panelWidget = null; broadcast('panel', null); } });
+    panel.on('blur', () => {
+      if (panel && panel.isVisible() && !panel.webContents.isDevToolsOpened()) {
+        cancelPendingPanelShow();
+        panel.hide();
+        panelWidget = null;
+        broadcast('panel', null);
+      }
+    });
     panel.on('hide', () => { if (panelWidget === 'volume') panel.webContents.send('volume:hidden'); });
     panel.on('hide', stopBatteryEstimate);
-    panel.on('closed', () => { stopBatteryEstimate(); panel = null; panelWidget = null; });
+    panel.on('closed', () => { cancelPendingPanelShow(); stopBatteryEstimate(); panel = null; panelWidget = null; });
     panel.loadFile(path.join(RENDERER, 'panel.html'), { query: { widget } });
     panel.once('ready-to-show', () => { panel.show(); panel.focus(); });
   } else {
+    const seq = ++panelShowSeq;
+    if (panelShowTimer) { clearTimeout(panelShowTimer); panelShowTimer = null; }
+    if (panel.isVisible()) panel.hide();
+    const backdrop = backdrops.get(panel);
+    if (backdrop) { backdrop.surface = null; backdrop.lastSync = null; }
     panel.setBounds(bounds);
-    syncBackdrop(panel);
-    panel.webContents.send('panel:widget', widget);
-    panel.show(); panel.focus();
+    panelWidget = widget;
+    broadcast('panel', widget);
+    panel.webContents.send('panel:widget', widget, seq);
+    panelShowTimer = setTimeout(() => showPanel(seq), 120);
+    return;
   }
   panelWidget = widget;
   broadcast('panel', widget);
@@ -592,6 +630,7 @@ function fitDevinPanel(e, contentHeight) {
 
 function openSettings(tab) {
   windowPreview?.hide();
+  cancelPendingPanelShow();
   if (panelWidget === 'bluetooth' || panelWidget === 'battery') { panelWidget = null; broadcast('panel', null); }
   if (panel && !panel.isDestroyed()) panel.hide();
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); if (tab) settingsWin.webContents.send('settings:tab', tab); return; }
@@ -823,7 +862,7 @@ function registerIpc() {
   ipcMain.handle('wifi:open', (e, target) => fromNetworkPanel(e) && networkControls().open(target));
   ipcMain.handle('panel:toggle', (_e, widget, x) => togglePanel(widget, x));
   ipcMain.handle('panel:fit-devin', fitDevinPanel);
-  ipcMain.handle('panel:close', () => { if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
+  ipcMain.handle('panel:close', () => { cancelPendingPanelShow(); if (panel && !panel.isDestroyed()) panel.hide(); panelWidget = null; broadcast('panel', null); });
   ipcMain.handle('settings:open', (_e, tab) => openSettings(tab));
   ipcMain.handle('bar:width', (_e, w) => { if (Math.abs(w - lastContentWidth) > 2) { lastContentWidth = w; if (S().layout === 'pill') layoutBar(); } });
   ipcMain.handle('pomodoro', (_e, action) => pomodoroAction(action));

@@ -6,9 +6,9 @@ body { padding: var(--surface-padding); }
 [data-position="top"] #panel.enter { animation-name: popdown; transform-origin: 50% 0; }
 @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.96); } }
 @keyframes popdown { from { opacity: 0; transform: translateY(-10px) scale(.96); } }
-#panel.enter #body > * { animation: rise .42s cubic-bezier(.32,.72,0,1) both; }
-#panel.enter #body > :nth-child(2) { animation-delay: 30ms; } #panel.enter #body > :nth-child(3) { animation-delay: 60ms; }
-#panel.enter #body > :nth-child(4) { animation-delay: 90ms; } #panel.enter #body > :nth-child(n+5) { animation-delay: 120ms; }
+#panel.enter-body #body > * { animation: rise .42s cubic-bezier(.32,.72,0,1) both; }
+#panel.enter-body #body > :nth-child(2) { animation-delay: 30ms; } #panel.enter-body #body > :nth-child(3) { animation-delay: 60ms; }
+#panel.enter-body #body > :nth-child(4) { animation-delay: 90ms; } #panel.enter-body #body > :nth-child(n+5) { animation-delay: 120ms; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 #panel[data-widget="devin"] {
   border-radius: 28px;
@@ -26,7 +26,7 @@ body { padding: var(--surface-padding); }
   100% { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #panel[data-widget="devin"].enter, #panel[data-widget="devin"].enter #body > * { animation: none; }
+  #panel[data-widget="devin"].enter, #panel[data-widget="devin"].enter-body #body > * { animation: none; }
 }
 #panel[data-widget="devin"] .head { flex: none; padding: 18px 18px 10px; }
 #panel[data-widget="devin"] #body { padding: 0; }
